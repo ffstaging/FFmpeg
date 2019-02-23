@@ -121,6 +121,7 @@ typedef struct SegmentContext {
     int   break_non_keyframes;
     int   write_empty;
 
+    int segment_write_temp; ///< write segments as temp files and rename on completion
     int use_rename;
     char temp_list_filename[1024];
 
@@ -225,6 +226,15 @@ static int set_segment_filename(AVFormatContext *s)
     snprintf(seg->cur_entry.filename, size, "%s%s",
              seg->entry_prefix ? seg->entry_prefix : "",
              av_basename(oc->url));
+
+    // Write segment as a temp file and rename on completion
+    if(seg->segment_write_temp) {
+        av_strlcatf(buf, sizeof(buf), ".tmp");
+        char *temp_name = av_strdup(buf);
+        if (!temp_name)
+            return AVERROR(ENOMEM);
+        ff_format_set_url(oc, temp_name);
+    }
 
     return 0;
 }
@@ -372,7 +382,7 @@ static int segment_end(AVFormatContext *s, int write_trailer, int is_last)
             SegmentListEntry *entry = av_mallocz(sizeof(*entry));
             if (!entry) {
                 ret = AVERROR(ENOMEM);
-                goto end;
+                goto fail;
             }
 
             /* append new element */
@@ -393,7 +403,7 @@ static int segment_end(AVFormatContext *s, int write_trailer, int is_last)
             }
 
             if ((ret = segment_list_open(s)) < 0)
-                goto end;
+                goto fail;
             for (entry = seg->segment_list_entries; entry; entry = entry->next)
                 segment_list_print_entry(seg->list_pb, seg->list_type, entry, s);
             if (seg->list_type == LIST_TYPE_M3U8 && is_last)
@@ -450,7 +460,20 @@ static int segment_end(AVFormatContext *s, int write_trailer, int is_last)
         }
     }
 
-end:
+    ff_format_io_close(oc, &oc->pb);
+
+    // Now rename the .tmp file to its actual name.
+    if (seg->segment_write_temp) {
+        char *final_filename = av_strndup(oc->url, strlen(oc->url) - 4);
+        if (!final_filename)
+            return AVERROR(ENOMEM);
+        ret = ff_rename(oc->url, final_filename, s);
+        av_free(final_filename);
+    }
+
+    return ret;
+
+fail:
     ff_format_io_close(oc, &oc->pb);
 
     return ret;
@@ -1075,6 +1098,7 @@ static const AVOption options[] = {
     { "reset_timestamps", "reset timestamps at the beginning of each segment", OFFSET(reset_timestamps), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, E },
     { "initial_offset", "set initial timestamp offset", OFFSET(initial_offset), AV_OPT_TYPE_DURATION, {.i64 = 0}, -INT64_MAX, INT64_MAX, E },
     { "write_empty_segments", "allow writing empty 'filler' segments", OFFSET(write_empty), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, E },
+    { "segment_write_temp", "write segments as temp files (.tmp) and rename on completion", OFFSET(segment_write_temp), AV_OPT_TYPE_BOOL,   {.i64 = 0}, 0, 1, E }, 
     { NULL },
 };
 

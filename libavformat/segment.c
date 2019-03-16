@@ -121,6 +121,8 @@ typedef struct SegmentContext {
     int   break_non_keyframes;
     int   write_empty;
 
+    int segment_limit;       ///< max number of segments to create
+
     int segment_write_temp; ///< write segments as temp files and rename on completion
     int use_rename;
     char temp_list_filename[1024];
@@ -365,6 +367,9 @@ static int segment_end(AVFormatContext *s, int write_trailer, int is_last)
     char buf[AV_TIMECODE_STR_SIZE];
     int i;
     int err;
+
+    if (seg->segment_limit && seg->segment_count >= seg->segment_limit)
+        return 0;
 
     if (!oc || !oc->pb)
         return AVERROR(EINVAL);
@@ -884,6 +889,9 @@ static int seg_write_packet(AVFormatContext *s, AVPacket *pkt)
     int64_t usecs;
     int64_t wrapped_val;
 
+    if (seg->segment_limit && seg->segment_count >= seg->segment_limit)
+        return 0;
+
     if (!seg->avf || !seg->avf->pb)
         return AVERROR(EINVAL);
 
@@ -957,6 +965,9 @@ calc_times:
 
         if ((ret = segment_end(s, seg->individual_header_trailer, 0)) < 0)
             goto fail;
+
+        if (seg->segment_limit && seg->segment_count >= seg->segment_limit)
+            return 0;
 
         if ((ret = segment_start(s, seg->individual_header_trailer)) < 0)
             goto fail;
@@ -1105,6 +1116,7 @@ static const AVOption options[] = {
     { "initial_offset", "set initial timestamp offset", OFFSET(initial_offset), AV_OPT_TYPE_DURATION, {.i64 = 0}, -INT64_MAX, INT64_MAX, E },
     { "write_empty_segments", "allow writing empty 'filler' segments", OFFSET(write_empty), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, E },
     { "segment_write_temp", "write segments as temp files (.tmp) and rename on completion", OFFSET(segment_write_temp), AV_OPT_TYPE_BOOL,   {.i64 = 0}, 0, 1, E }, 
+    { "segment_limit", "stop output once the specified number of segments has been written", OFFSET(segment_limit), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, E },
     { NULL },
 };
 

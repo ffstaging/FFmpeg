@@ -218,7 +218,7 @@ static uint64_t get_value(AVIOContext *pb, int type, int type2_size)
     }
 }
 
-static void get_tag(AVFormatContext *s, const char *key, int type, int len, int type2_size)
+static void get_tag(AVFormatContext *s, const char *key, int type, uint32_t len, int type2_size)
 {
     ASFContext *asf = s->priv_data;
     char *value = NULL;
@@ -528,7 +528,7 @@ static int asf_read_ext_stream_properties(AVFormatContext *s, int64_t size)
 static int asf_read_content_desc(AVFormatContext *s, int64_t size)
 {
     AVIOContext *pb = s->pb;
-    int len1, len2, len3, len4, len5;
+    uint32_t len1, len2, len3, len4, len5;
 
     len1 = avio_rl16(pb);
     len2 = avio_rl16(pb);
@@ -619,25 +619,23 @@ static int asf_read_metadata(AVFormatContext *s, int64_t size)
     ASFContext *asf = s->priv_data;
     uint64_t dar_num[128] = {0};
     uint64_t dar_den[128] = {0};
-    int n, stream_num, name_len_utf16, name_len_utf8, value_len;
+    int n, name_len_utf8;
+    uint16_t stream_num, name_len_utf16, value_type;
+    uint32_t value_len;
     int ret, i;
     n = avio_rl16(pb);
 
     for (i = 0; i < n; i++) {
         uint8_t *name;
-        int value_type;
 
         avio_rl16(pb);  // lang_list_index
-        stream_num = avio_rl16(pb);
-        name_len_utf16 = avio_rl16(pb);
-        value_type = avio_rl16(pb); /* value_type */
-        value_len  = avio_rl32(pb);
+        stream_num     = (uint16_t)avio_rl16(pb);
+        name_len_utf16 = (uint16_t)avio_rl16(pb);
+        value_type     = (uint16_t)avio_rl16(pb); /* value_type */
+        value_len      = avio_rl32(pb);
 
-        if (value_len < 0 || value_len > UINT16_MAX)
-            return AVERROR_INVALIDDATA;
-
-        name_len_utf8 = 2*name_len_utf16 + 1;
-        name          = av_malloc(name_len_utf8);
+        name_len_utf8  = 2 * name_len_utf16 + 1;
+        name           = av_malloc(name_len_utf8);
         if (!name)
             return AVERROR(ENOMEM);
 

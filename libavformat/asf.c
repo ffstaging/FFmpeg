@@ -267,12 +267,18 @@ static int get_id3_tag(AVFormatContext *s, int len)
 }
 
 int ff_asf_handle_byte_array(AVFormatContext *s, const char *name,
-                             int val_len)
+                             uint32_t val_len)
 {
-    if (!strcmp(name, "WM/Picture")) // handle cover art
-        return asf_read_picture(s, val_len);
-    else if (!strcmp(name, "ID3")) // handle ID3 tag
-        return get_id3_tag(s, val_len);
+    if (val_len > INT32_MAX) {
+        av_log(s, AV_LOG_VERBOSE, "Unable to handle byte arrays > INT32_MAX  in tag %s.\n", name);
+        return 1;
+    }
 
+    if (!strcmp(name, "WM/Picture")) // handle cover art
+        return asf_read_picture(s, (int)val_len);
+    else if (!strcmp(name, "ID3")) // handle ID3 tag
+        return get_id3_tag(s, (int)val_len);
+
+    av_log(s, AV_LOG_VERBOSE, "Unsupported byte array in tag %s.\n", name);
     return 1;
 }

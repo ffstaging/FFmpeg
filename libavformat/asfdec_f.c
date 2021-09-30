@@ -280,9 +280,12 @@ static void get_tag(AVFormatContext *s, const char *key, int type, uint32_t len,
         snprintf(value, buffer_len, "%"PRIu64, num);
         break;
     }
-    case ASF_GUID:
-        av_log(s, AV_LOG_DEBUG, "Unsupported GUID value in tag %s.\n", key);
-        goto finish;
+    case ASF_GUID: {
+        ff_asf_guid g;
+        ff_get_guid(s->pb, &g);
+        snprintf(value, buffer_len, "%x", g[0]);
+        break;
+    }
     default:
         av_log(s, AV_LOG_DEBUG,
                "Unsupported value type %d in tag %s.\n", type, key);

@@ -1181,7 +1181,7 @@ static int asf_parse_packet(AVFormatContext *s, AVIOContext *pb, AVPacket *pkt)
             return AVERROR_EOF;
         if (asf->packet_size_left < FRAME_HEADER_SIZE ||
             asf->packet_segments < 1 && asf->packet_time_start == 0) {
-            int ret = asf->packet_size_left + asf->packet_padsize;
+            ret = asf->packet_size_left + asf->packet_padsize;
 
             if (asf->packet_size_left && asf->packet_size_left < FRAME_HEADER_SIZE)
                 av_log(s, AV_LOG_WARNING, "Skip due to FRAME_HEADER_SIZE\n");
@@ -1250,7 +1250,6 @@ static int asf_parse_packet(AVFormatContext *s, AVIOContext *pb, AVPacket *pkt)
         if (asf_st->pkt.size != asf_st->packet_obj_size ||
             // FIXME is this condition sufficient?
             asf_st->frag_offset + asf->packet_frag_size > asf_st->pkt.size) {
-            int ret;
 
             if (asf_st->pkt.data) {
                 av_log(s, AV_LOG_INFO,

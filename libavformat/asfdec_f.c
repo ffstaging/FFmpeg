@@ -221,37 +221,63 @@ static uint64_t get_value(AVIOContext *pb, int type, int type2_size)
 static void get_tag(AVFormatContext *s, const char *key, int type, uint32_t len, int type2_size)
 {
     ASFContext *asf = s->priv_data;
-    char *value = NULL;
     int64_t off = avio_tell(s->pb);
-#define LEN 22
-
-    av_assert0((unsigned)len < (INT_MAX - LEN) / 2);
+    char *value = NULL;
+    uint64_t required_bufferlen;
+    int buffer_len;
 
     if (!asf->export_xmp && !strncmp(key, "xmp", 3))
         goto finish;
 
-    value = av_malloc(2 * len + LEN);
+    switch (type) {
+    case ASF_UNICODE:
+        required_bufferlen = (uint64_t)len * 2 + 1;
+        break;
+    case -1: // ASCII
+        required_bufferlen = (uint64_t)len + 1;
+        break;
+    case ASF_BYTE_ARRAY:
+        ff_asf_handle_byte_array(s, key, len);
+        goto finish;
+    case ASF_BOOL:
+    case ASF_DWORD:
+    case ASF_QWORD:
+    case ASF_WORD:
+        required_bufferlen = 22;
+        break;
+    case ASF_GUID:
+        required_bufferlen = 33;
+        break;
+    default:
+        required_bufferlen = len;
+        break;
+    }
+
+    if (required_bufferlen > INT32_MAX) {
+        av_log(s, AV_LOG_VERBOSE, "Unable to handle values > INT32_MAX  in tag %s.\n", key);
+        goto finish;
+    }
+
+    buffer_len = (int)required_bufferlen;
+
+    value = av_malloc(buffer_len);
     if (!value)
         goto finish;
 
     switch (type) {
     case ASF_UNICODE:
-        avio_get_str16le(s->pb, len, value, 2 * len + 1);
+        avio_get_str16le(s->pb, len, value, buffer_len);
         break;
-    case -1: // ASCI
-        avio_read(s->pb, value, len);
-        value[len]=0;
+    case -1: // ASCII
+        avio_read(s->pb, value, buffer_len - 1);
+        value[buffer_len - 1] = 0;
         break;
-    case ASF_BYTE_ARRAY:
-        if (ff_asf_handle_byte_array(s, key, len) > 0)
-            av_log(s, AV_LOG_VERBOSE, "Unsupported byte array in tag %s.\n", key);
-        goto finish;
     case ASF_BOOL:
     case ASF_DWORD:
     case ASF_QWORD:
     case ASF_WORD: {
         uint64_t num = get_value(s->pb, type, type2_size);
-        snprintf(value, LEN, "%"PRIu64, num);
+        snprintf(value, buffer_len, "%"PRIu64, num);
         break;
     }
     case ASF_GUID:

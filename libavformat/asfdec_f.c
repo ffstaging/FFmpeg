@@ -977,6 +977,7 @@ static int asf_get_packet(AVFormatContext *s, AVIOContext *pb)
             avio_seek(pb, -1, SEEK_CUR); // FIXME
         }
     } else {
+        d = e = 0;
         c = avio_r8(pb);
         if (c & 0x80) {
             rsize ++;

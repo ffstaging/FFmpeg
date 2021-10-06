@@ -299,7 +299,7 @@ finish:
     avio_seek(s->pb, off + len, SEEK_SET);
 }
 
-static int asf_read_file_properties(AVFormatContext *s, int64_t size)
+static int asf_read_file_properties(AVFormatContext *s)
 {
     ASFContext *asf = s->priv_data;
     AVIOContext *pb = s->pb;
@@ -494,7 +494,7 @@ static int asf_read_stream_properties(AVFormatContext *s, int64_t size)
     return 0;
 }
 
-static int asf_read_ext_stream_properties(AVFormatContext *s, int64_t size)
+static int asf_read_ext_stream_properties(AVFormatContext *s)
 {
     ASFContext *asf = s->priv_data;
     AVIOContext *pb = s->pb;
@@ -554,7 +554,7 @@ static int asf_read_ext_stream_properties(AVFormatContext *s, int64_t size)
     return 0;
 }
 
-static int asf_read_content_desc(AVFormatContext *s, int64_t size)
+static int asf_read_content_desc(AVFormatContext *s)
 {
     AVIOContext *pb = s->pb;
     uint32_t len1, len2, len3, len4, len5;
@@ -573,7 +573,7 @@ static int asf_read_content_desc(AVFormatContext *s, int64_t size)
     return 0;
 }
 
-static int asf_read_ext_content_desc(AVFormatContext *s, int64_t size)
+static int asf_read_ext_content_desc(AVFormatContext *s)
 {
     AVIOContext *pb = s->pb;
     ASFContext *asf = s->priv_data;
@@ -619,7 +619,7 @@ static int asf_read_ext_content_desc(AVFormatContext *s, int64_t size)
     return 0;
 }
 
-static int asf_read_language_list(AVFormatContext *s, int64_t size)
+static int asf_read_language_list(AVFormatContext *s)
 {
     AVIOContext *pb = s->pb;
     ASFContext *asf = s->priv_data;
@@ -639,7 +639,7 @@ static int asf_read_language_list(AVFormatContext *s, int64_t size)
     return 0;
 }
 
-static int asf_read_metadata(AVFormatContext *s, int64_t size)
+static int asf_read_metadata(AVFormatContext *s)
 {
     AVIOContext *pb = s->pb;
     ASFContext *asf = s->priv_data;
@@ -693,7 +693,7 @@ static int asf_read_metadata(AVFormatContext *s, int64_t size)
     return 0;
 }
 
-static int asf_read_marker(AVFormatContext *s, int64_t size)
+static int asf_read_marker(AVFormatContext *s)
 {
     AVIOContext *pb = s->pb;
     ASFContext *asf = s->priv_data;
@@ -772,21 +772,21 @@ static int asf_read_header(AVFormatContext *s)
         if (gsize < 24)
             return AVERROR_INVALIDDATA;
         if (!ff_guidcmp(&g, &ff_asf_file_header)) {
-            ret = asf_read_file_properties(s, gsize);
+            ret = asf_read_file_properties(s);
         } else if (!ff_guidcmp(&g, &ff_asf_stream_header)) {
             ret = asf_read_stream_properties(s, gsize);
         } else if (!ff_guidcmp(&g, &ff_asf_comment_header)) {
-            asf_read_content_desc(s, gsize);
+            asf_read_content_desc(s);
         } else if (!ff_guidcmp(&g, &ff_asf_language_guid)) {
-            asf_read_language_list(s, gsize);
+            asf_read_language_list(s);
         } else if (!ff_guidcmp(&g, &ff_asf_extended_content_header)) {
-            asf_read_ext_content_desc(s, gsize);
+            asf_read_ext_content_desc(s);
         } else if (!ff_guidcmp(&g, &ff_asf_metadata_header)) {
-            asf_read_metadata(s, gsize);
+            asf_read_metadata(s);
         } else if (!ff_guidcmp(&g, &ff_asf_metadata_library_header)) {
-            asf_read_metadata(s, gsize);
+            asf_read_metadata(s);
         } else if (!ff_guidcmp(&g, &ff_asf_ext_stream_header)) {
-            asf_read_ext_stream_properties(s, gsize);
+            asf_read_ext_stream_properties(s);
 
             // there could be an optional stream properties object to follow
             // if so the next iteration will pick it up
@@ -796,7 +796,7 @@ static int asf_read_header(AVFormatContext *s)
             avio_skip(pb, 6);
             continue;
         } else if (!ff_guidcmp(&g, &ff_asf_marker_header)) {
-            asf_read_marker(s, gsize);
+            asf_read_marker(s);
         } else if (avio_feof(pb)) {
             return AVERROR_EOF;
         } else {

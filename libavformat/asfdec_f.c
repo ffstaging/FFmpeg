@@ -905,21 +905,21 @@ static int asf_read_header(AVFormatContext *s)
 }
 
 #define DO_2BITS(bits, var, defval)             \
-    switch (bits & 3) {                         \
+    switch ((bits) & 3) {                       \
     case 3:                                     \
-        var = avio_rl32(pb);                    \
+        (var) = avio_rl32(pb);                  \
         rsize += 4;                             \
         break;                                  \
     case 2:                                     \
-        var = avio_rl16(pb);                    \
+        (var) = avio_rl16(pb);                  \
         rsize += 2;                             \
         break;                                  \
     case 1:                                     \
-        var = avio_r8(pb);                      \
+        (var) = avio_r8(pb);                    \
         rsize++;                                \
         break;                                  \
     default:                                    \
-        var = defval;                           \
+        (var) = (defval);                       \
         break;                                  \
     }
 
@@ -1002,9 +1002,9 @@ static int asf_get_packet(AVFormatContext *s, AVIOContext *pb)
     asf->packet_flags    = c;
     asf->packet_property = d;
 
-    DO_2BITS(asf->packet_flags >> 5, packet_length, s->packet_size);
-    DO_2BITS(asf->packet_flags >> 1, padsize, 0); // sequence ignored
-    DO_2BITS(asf->packet_flags >> 3, padsize, 0); // padding length
+    DO_2BITS(asf->packet_flags >> 5, packet_length, s->packet_size)
+    DO_2BITS(asf->packet_flags >> 1, padsize, 0) // sequence ignored
+    DO_2BITS(asf->packet_flags >> 3, padsize, 0) // padding length
 
     // the following checks prevent overflows and infinite loops
     if (!packet_length || packet_length >= (1U << 29)) {
@@ -1065,9 +1065,9 @@ static int asf_read_frame_header(AVFormatContext *s, AVIOContext *pb)
     asf->stream_index     = asf->asfid2avid[num & 0x7f];
     asfst                 = &asf->streams[num & 0x7f];
     // sequence should be ignored!
-    DO_2BITS(asf->packet_property >> 4, asf->packet_seq, 0);
-    DO_2BITS(asf->packet_property >> 2, asf->packet_frag_offset, 0);
-    DO_2BITS(asf->packet_property, asf->packet_replic_size, 0);
+    DO_2BITS(asf->packet_property >> 4, asf->packet_seq, 0)
+    DO_2BITS(asf->packet_property >> 2, asf->packet_frag_offset, 0)
+    DO_2BITS(asf->packet_property, asf->packet_replic_size, 0)
     av_log(asf, AV_LOG_TRACE, "key:%d stream:%d seq:%d offset:%d replic_size:%d num:%X packet_property %X\n",
             asf->packet_key_frame, asf->stream_index, asf->packet_seq,
             asf->packet_frag_offset, asf->packet_replic_size, num, asf->packet_property);
@@ -1143,7 +1143,7 @@ static int asf_read_frame_header(AVFormatContext *s, AVIOContext *pb)
         return AVERROR_INVALIDDATA;
     }
     if (asf->packet_flags & 0x01) {
-        DO_2BITS(asf->packet_segsizetype >> 6, asf->packet_frag_size, 0); // 0 is illegal
+        DO_2BITS(asf->packet_segsizetype >> 6, asf->packet_frag_size, 0) // 0 is illegal
         if (rsize > asf->packet_size_left) {
             av_log(s, AV_LOG_ERROR, "packet_replic_size is invalid\n");
             return AVERROR_INVALIDDATA;

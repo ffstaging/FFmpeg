@@ -323,7 +323,7 @@ static int asf_read_file_properties(AVFormatContext *s)
     return 0;
 }
 
-static int asf_read_stream_properties(AVFormatContext *s, int64_t size)
+static int asf_read_stream_properties(AVFormatContext *s, uint64_t size)
 {
     ASFContext *asf = s->priv_data;
     AVIOContext *pb = s->pb;

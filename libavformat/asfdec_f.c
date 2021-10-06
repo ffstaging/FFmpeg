@@ -202,7 +202,7 @@ static int asf_probe(const AVProbeData *pd)
 
 /* size of type 2 (BOOL) is 32bit for "Extended Content Description Object"
  * but 16 bit for "Metadata Object" and "Metadata Library Object" */
-static int get_value(AVIOContext *pb, int type, int type2_size)
+static uint64_t get_value(AVIOContext *pb, int type, int type2_size)
 {
     switch (type) {
     case ASF_BOOL:
@@ -567,10 +567,22 @@ static int asf_read_ext_content_desc(AVFormatContext *s, int64_t size)
         /* My sample has that stream set to 0 maybe that mean the container.
          * ASF stream count starts at 1. I am using 0 to the container value
          * since it's unused. */
-        if (!strcmp(name, "AspectRatioX"))
-            asf->dar[0].num = get_value(s->pb, value_type, 32);
-        else if (!strcmp(name, "AspectRatioY"))
-            asf->dar[0].den = get_value(s->pb, value_type, 32);
+        if (!strcmp(name, "AspectRatioX")) {
+            const uint64_t value = get_value(s->pb, value_type, 32);
+            if (value > INT32_MAX) {
+                av_log(s, AV_LOG_DEBUG, "Unsupported AspectRatioX value: %"PRIu64"\n", value);
+                return AVERROR(ENOTSUP);
+            }
+            asf->dar[0].num = (int)value;
+        }
+        else if (!strcmp(name, "AspectRatioY")) {
+            const uint64_t value = get_value(s->pb, value_type, 32);
+            if (value > INT32_MAX) {
+                av_log(s, AV_LOG_DEBUG, "Unsupported AspectRatioY value: %"PRIu64"\n", value);
+                return AVERROR(ENOTSUP);
+            }
+            asf->dar[0].den = (int)value;
+        }
         else
             get_tag(s, name, value_type, value_len, 32);
     }
@@ -630,13 +642,21 @@ static int asf_read_metadata(AVFormatContext *s, int64_t size)
                 i, stream_num, name_len_utf16, value_type, value_len, name);
 
         if (!strcmp(name, "AspectRatioX")){
-            int aspect_x = get_value(s->pb, value_type, 16);
+            const uint64_t aspect_x = get_value(s->pb, value_type, 16);
+            if (aspect_x > INT32_MAX) {
+                av_log(s, AV_LOG_DEBUG, "Unsupported AspectRatioX value: %"PRIu64"\n", aspect_x);
+                return AVERROR(ENOTSUP);
+            }
             if(stream_num < 128)
-                asf->dar[stream_num].num = aspect_x;
+                asf->dar[stream_num].num = (int)aspect_x;
         } else if(!strcmp(name, "AspectRatioY")){
-            int aspect_y = get_value(s->pb, value_type, 16);
+            const uint64_t aspect_y = get_value(s->pb, value_type, 16);
+            if (aspect_y > INT32_MAX) {
+                av_log(s, AV_LOG_DEBUG, "Unsupported AspectRatioY value: %"PRIu64"\n", aspect_y);
+                return AVERROR(ENOTSUP);
+            }
             if(stream_num < 128)
-                asf->dar[stream_num].den = aspect_y;
+                asf->dar[stream_num].den = (int)aspect_y;
         } else {
             get_tag(s, name, value_type, value_len, 16);
         }

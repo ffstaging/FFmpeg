@@ -202,7 +202,7 @@ static int asf_probe(const AVProbeData *pd)
 
 /* size of type 2 (BOOL) is 32bit for "Extended Content Description Object"
  * but 16 bit for "Metadata Object" and "Metadata Library Object" */
-static int get_value(AVIOContext *pb, int type, int type2_size)
+static uint64_t get_value(AVIOContext *pb, int type, int type2_size)
 {
     switch (type) {
     case ASF_BOOL:
@@ -548,6 +548,8 @@ static int asf_read_ext_content_desc(AVFormatContext *s, int64_t size)
 {
     AVIOContext *pb = s->pb;
     ASFContext *asf = s->priv_data;
+    uint64_t dar_num = 0;
+    uint64_t dar_den = 0;
     int desc_count, i, ret;
 
     desc_count = avio_rl16(pb);
@@ -567,13 +569,26 @@ static int asf_read_ext_content_desc(AVFormatContext *s, int64_t size)
         /* My sample has that stream set to 0 maybe that mean the container.
          * ASF stream count starts at 1. I am using 0 to the container value
          * since it's unused. */
-        if (!strcmp(name, "AspectRatioX"))
-            asf->dar[0].num = get_value(s->pb, value_type, 32);
-        else if (!strcmp(name, "AspectRatioY"))
-            asf->dar[0].den = get_value(s->pb, value_type, 32);
+        if (!strcmp(name, "AspectRatioX")) {
+            dar_num = get_value(s->pb, value_type, 32);
+            if (dar_num > INT64_MAX) {
+                av_log(s, AV_LOG_DEBUG, "Unsupported AspectRatioX value: %"PRIu64"\n", dar_num);
+                return AVERROR(ENOTSUP);
+            }
+        }
+        else if (!strcmp(name, "AspectRatioY")) {
+            dar_den = get_value(s->pb, value_type, 32);
+            if (dar_den > INT64_MAX) {
+                av_log(s, AV_LOG_DEBUG, "Unsupported AspectRatioY value: %"PRIu64"\n", dar_den);
+                return AVERROR(ENOTSUP);
+            }
+        }
         else
             get_tag(s, name, value_type, value_len, 32);
     }
+
+    if (dar_num && dar_den)
+        av_reduce(&asf->dar[0].num, &asf->dar[0].den, dar_num, dar_den, INT_MAX);
 
     return 0;
 }
@@ -602,6 +617,8 @@ static int asf_read_metadata(AVFormatContext *s, int64_t size)
 {
     AVIOContext *pb = s->pb;
     ASFContext *asf = s->priv_data;
+    uint64_t dar_num[128] = {0};
+    uint64_t dar_den[128] = {0};
     int n, stream_num, name_len_utf16, name_len_utf8, value_len;
     int ret, i;
     n = avio_rl16(pb);
@@ -629,17 +646,29 @@ static int asf_read_metadata(AVFormatContext *s, int64_t size)
         av_log(s, AV_LOG_TRACE, "%d stream %d name_len %2d type %d len %4d <%s>\n",
                 i, stream_num, name_len_utf16, value_type, value_len, name);
 
-        if (!strcmp(name, "AspectRatioX")){
-            int aspect_x = get_value(s->pb, value_type, 16);
-            if(stream_num < 128)
-                asf->dar[stream_num].num = aspect_x;
-        } else if(!strcmp(name, "AspectRatioY")){
-            int aspect_y = get_value(s->pb, value_type, 16);
-            if(stream_num < 128)
-                asf->dar[stream_num].den = aspect_y;
-        } else {
-            get_tag(s, name, value_type, value_len, 16);
+        if (!strcmp(name, "AspectRatioX") && stream_num < 128) {
+            dar_num[stream_num] = get_value(s->pb, value_type, 16);
+            if (dar_num[stream_num] > INT64_MAX) {
+                av_log(s, AV_LOG_DEBUG, "Unsupported AspectRatioX value: %"PRIu64"\n", dar_num[stream_num]);
+                return AVERROR(ENOTSUP);
+            }
         }
+        else if (!strcmp(name, "AspectRatioY") && stream_num < 128) {
+            dar_den[stream_num] = get_value(s->pb, value_type, 16);
+            if (dar_den[stream_num] > INT64_MAX) {
+                av_log(s, AV_LOG_DEBUG, "Unsupported AspectRatioY value: %"PRIu64"\n", dar_den[stream_num]);
+                return AVERROR(ENOTSUP);
+            }
+        } else
+            get_tag(s, name, value_type, value_len, 16);
+
+
+        if (stream_num < 128 && dar_num[stream_num] && dar_den[stream_num]) {
+            av_reduce(&asf->dar[stream_num].num, &asf->dar[stream_num].den, dar_num[stream_num], dar_den[stream_num], INT_MAX);
+            dar_num[stream_num] = 0;
+            dar_den[stream_num] = 0;
+        }
+
         av_freep(&name);
     }
 

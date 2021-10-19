@@ -1847,6 +1847,10 @@ static int show_stream(AVTextFormatContext *tfc, AVFormatContext *fmt_ctx, int s
         else
             print_str_opt("height",  "N/A");
         break;
+
+    case AVMEDIA_TYPE_ATTACHMENT:
+        if (par->extradata_size)
+            print_int("attachment_size", par->extradata_size);
     }
 
     if (show_private_data) {

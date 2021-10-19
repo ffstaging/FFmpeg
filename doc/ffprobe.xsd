@@ -319,6 +319,9 @@
     <xsd:attribute name="nb_frames"        type="xsd:int"/>
     <xsd:attribute name="nb_read_frames"   type="xsd:int"/>
     <xsd:attribute name="nb_read_packets"  type="xsd:int"/>
+
+    <!-- attachment attributes -->
+    <xsd:attribute name="attachment_size"  type="xsd:int"/>
   </xsd:complexType>
 
   <xsd:complexType name="programType">

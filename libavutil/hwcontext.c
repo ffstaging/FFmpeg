@@ -123,6 +123,7 @@ static const AVClass hwdevice_ctx_class = {
 static void hwdevice_ctx_free(void *opaque, uint8_t *data)
 {
     AVHWDeviceContext *ctx = (AVHWDeviceContext*)data;
+    int i;
 
     /* uninit might still want access the hw context and the user
      * free() callback might destroy it, so uninit has to be called first */
@@ -133,6 +134,8 @@ static void hwdevice_ctx_free(void *opaque, uint8_t *data)
         ctx->free(ctx);
 
     av_buffer_unref(&ctx->internal->source_device);
+    for (i = 0; i < AV_HWDEVICE_TYPE_NB; i++)
+        av_buffer_unref(&ctx->internal->derived_devices[i]);
 
     av_freep(&ctx->hwctx);
     av_freep(&ctx->internal->priv);
@@ -644,10 +647,31 @@ fail:
     return ret;
 }
 
-int av_hwdevice_ctx_create_derived_opts(AVBufferRef **dst_ref_ptr,
-                                        enum AVHWDeviceType type,
-                                        AVBufferRef *src_ref,
-                                        AVDictionary *options, int flags)
+static AVBufferRef* find_derived_hwdevice_ctx(AVBufferRef *src_ref, enum AVHWDeviceType type)
+{
+    AVBufferRef *tmp_ref;
+    AVHWDeviceContext *src_ctx;
+    int i;
+
+    src_ctx = (AVHWDeviceContext*)src_ref->data;
+    if (src_ctx->type == type)
+        return src_ref;
+
+    for (i = 0; i < AV_HWDEVICE_TYPE_NB; i++)
+        if (src_ctx->internal->derived_devices[i]) {
+            tmp_ref = find_derived_hwdevice_ctx(src_ctx->internal->derived_devices[i], type);
+            if (tmp_ref)
+                return tmp_ref;
+        }
+
+    return NULL;
+}
+
+static int hwdevice_ctx_create_derived(AVBufferRef **dst_ref_ptr,
+                                       enum AVHWDeviceType type,
+                                       AVBufferRef *src_ref,
+                                       AVDictionary *options, int flags,
+                                       int get_existing)
 {
     AVBufferRef *dst_ref = NULL, *tmp_ref;
     AVHWDeviceContext *dst_ctx, *tmp_ctx;
@@ -665,6 +689,18 @@ int av_hwdevice_ctx_create_derived_opts(AVBufferRef **dst_ref_ptr,
             goto done;
         }
         tmp_ref = tmp_ctx->internal->source_device;
+    }
+
+    if (get_existing) {
+        tmp_ref = find_derived_hwdevice_ctx(src_ref, type);
+        if (tmp_ref) {
+            dst_ref = av_buffer_ref(tmp_ref);
+            if (!dst_ref) {
+                ret = AVERROR(ENOMEM);
+                goto fail;
+            }
+            goto done;
+        }
     }
 
     dst_ref = av_hwdevice_ctx_alloc(type);
@@ -687,6 +723,13 @@ int av_hwdevice_ctx_create_derived_opts(AVBufferRef **dst_ref_ptr,
                 if (!dst_ctx->internal->source_device) {
                     ret = AVERROR(ENOMEM);
                     goto fail;
+                }
+                if (!tmp_ctx->internal->derived_devices[type]) {
+                    tmp_ctx->internal->derived_devices[type] = av_buffer_ref(dst_ref);
+                    if (!tmp_ctx->internal->derived_devices[type]) {
+                        ret = AVERROR(ENOMEM);
+                        goto fail;
+                    }
                 }
                 ret = av_hwdevice_ctx_init(dst_ref);
                 if (ret < 0)
@@ -712,12 +755,29 @@ fail:
     return ret;
 }
 
+int av_hwdevice_ctx_create_derived_opts(AVBufferRef **dst_ref_ptr,
+                                        enum AVHWDeviceType type,
+                                        AVBufferRef *src_ref,
+                                        AVDictionary *options, int flags)
+{
+    return hwdevice_ctx_create_derived(dst_ref_ptr, type, src_ref,
+                                       options, flags, 0);
+}
+
+int av_hwdevice_ctx_get_or_create_derived(AVBufferRef **dst_ref_ptr,
+                                          enum AVHWDeviceType type,
+                                          AVBufferRef *src_ref, int flags)
+{
+    return hwdevice_ctx_create_derived(dst_ref_ptr, type, src_ref,
+                                       NULL, flags, 1);
+}
+
 int av_hwdevice_ctx_create_derived(AVBufferRef **dst_ref_ptr,
                                    enum AVHWDeviceType type,
                                    AVBufferRef *src_ref, int flags)
 {
-    return av_hwdevice_ctx_create_derived_opts(dst_ref_ptr, type, src_ref,
-                                               NULL, flags);
+    return hwdevice_ctx_create_derived(dst_ref_ptr, type, src_ref,
+                                       NULL, flags, 0);
 }
 
 static void ff_hwframe_unmap(void *opaque, uint8_t *data)

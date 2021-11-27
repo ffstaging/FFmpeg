@@ -443,7 +443,7 @@ static int64_t guess_status_pts(AVFilterContext *ctx, int status, AVRational lin
     return AV_NOPTS_VALUE;
 }
 
-static int ff_request_frame_to_filter(AVFilterLink *link)
+static int ff_request_frame_to_filter(AVFilterLink *link, int input_index)
 {
     int ret = -1;
 
@@ -452,8 +452,8 @@ static int ff_request_frame_to_filter(AVFilterLink *link)
     link->frame_blocked_in = 1;
     if (link->srcpad->request_frame)
         ret = link->srcpad->request_frame(link);
-    else if (link->src->inputs[0])
-        ret = ff_request_frame(link->src->inputs[0]);
+    else if (link->src->inputs[input_index])
+        ret = ff_request_frame(link->src->inputs[input_index]);
     if (ret < 0) {
         if (ret != AVERROR(EAGAIN) && ret != link->status_in)
             ff_avfilter_link_set_in_status(link, ret, guess_status_pts(link->src, ret, link->time_base));
@@ -1153,6 +1153,14 @@ static int forward_status_change(AVFilterContext *filter, AVFilterLink *in)
 {
     unsigned out = 0, progress = 0;
     int ret;
+    int input_index = 0;
+
+    for (int i = 0; i < in->dst->nb_inputs; i++) {
+        if (&in->dst->input_pads[i] == in->dstpad) {
+            input_index = i;
+            break;
+        }
+    }
 
     av_assert0(!in->status_out);
     if (!filter->nb_outputs) {
@@ -1162,7 +1170,7 @@ static int forward_status_change(AVFilterContext *filter, AVFilterLink *in)
     while (!in->status_out) {
         if (!filter->outputs[out]->status_in) {
             progress++;
-            ret = ff_request_frame_to_filter(filter->outputs[out]);
+            ret = ff_request_frame_to_filter(filter->outputs[out], input_index);
             if (ret < 0)
                 return ret;
         }
@@ -1199,7 +1207,7 @@ static int ff_filter_activate_default(AVFilterContext *filter)
     for (i = 0; i < filter->nb_outputs; i++) {
         if (filter->outputs[i]->frame_wanted_out &&
             !filter->outputs[i]->frame_blocked_in) {
-            return ff_request_frame_to_filter(filter->outputs[i]);
+            return ff_request_frame_to_filter(filter->outputs[i], 0);
         }
     }
     return FFERROR_NOT_READY;

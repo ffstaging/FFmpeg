@@ -808,4 +808,6 @@ void ff_h264_free_tables(H264Context *h);
 
 void ff_h264_set_erpic(ERPicture *dst, H264Picture *src);
 
+int ff_h264_export_frame_props(AVCodecContext *logctx, H264SEIContext *sei, H264Context *h, AVFrame *out);
+
 #endif /* AVCODEC_H264DEC_H */

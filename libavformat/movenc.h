@@ -80,6 +80,7 @@ typedef struct MOVFragmentInfo {
     int64_t duration;
     int64_t tfrf_offset;
     int size;
+    uint32_t first_sample_flags;
 } MOVFragmentInfo;
 
 typedef struct MOVTrack {

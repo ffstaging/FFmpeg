@@ -4649,6 +4649,7 @@ static int mov_add_tfra_entries(AVIOContext *pb, MOVMuxContext *mov, int tracks,
         info->time     = track->cluster[0].dts + track->cluster[0].cts;
         info->duration = track->end_pts -
                          (track->cluster[0].dts + track->cluster[0].cts);
+        info->first_sample_flags = track->cluster[0].flags;
         // If the pts is less than zero, we will have trimmed
         // away parts of the media track using an edit list,
         // and the corresponding start presentation time is zero.
@@ -4931,7 +4932,19 @@ static int mov_write_moof_tag(AVIOContext *pb, MOVMuxContext *mov, int tracks,
 static int mov_write_tfra_tag(AVIOContext *pb, MOVTrack *track)
 {
     int64_t pos = avio_tell(pb);
+    int number_of_entry = 0;
     int i;
+
+    /* We can't write and then update number_of_entry, because we cannot fix
+     * the case when number_of_entry is zero, since zero indicates that every
+     * sample is a sync sample. So get number_of_entry first.
+     */
+    for (i = 0; i < track->nb_frag_info; i++) {
+        if (track->frag_info[i].first_sample_flags & MOV_SYNC_SAMPLE)
+            number_of_entry++;
+    }
+    if (!number_of_entry)
+        return 0;
 
     avio_wb32(pb, 0); /* size placeholder */
     ffio_wfourcc(pb, "tfra");
@@ -4940,8 +4953,10 @@ static int mov_write_tfra_tag(AVIOContext *pb, MOVTrack *track)
 
     avio_wb32(pb, track->track_id);
     avio_wb32(pb, 0); /* length of traf/trun/sample num */
-    avio_wb32(pb, track->nb_frag_info);
+    avio_wb32(pb, number_of_entry);
     for (i = 0; i < track->nb_frag_info; i++) {
+        if (!(track->frag_info[i].first_sample_flags & MOV_SYNC_SAMPLE))
+            continue;
         avio_wb64(pb, track->frag_info[i].time);
         avio_wb64(pb, track->frag_info[i].offset + track->data_offset);
         avio_w8(pb, 1); /* traf number */

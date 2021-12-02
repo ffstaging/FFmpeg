@@ -4426,7 +4426,7 @@ static int mov_write_mfhd_tag(AVIOContext *pb, MOVMuxContext *mov)
     return 0;
 }
 
-static uint32_t get_sample_flags(MOVTrack *track, MOVIentry *entry)
+static uint32_t get_sample_flags(MOVIentry *entry)
 {
     return entry->flags & MOV_SYNC_SAMPLE ? MOV_FRAG_SAMPLE_FLAG_DEPENDS_NO :
            (MOV_FRAG_SAMPLE_FLAG_DEPENDS_YES | MOV_FRAG_SAMPLE_FLAG_IS_NON_SYNC);
@@ -4486,7 +4486,7 @@ static int mov_write_tfhd_tag(AVIOContext *pb, MOVMuxContext *mov,
         /* Set the default flags based on the second sample, if available.
          * If the first sample is different, that can be signaled via a separate field. */
         if (track->entry > 1)
-            track->default_sample_flags = get_sample_flags(track, &track->cluster[1]);
+            track->default_sample_flags = get_sample_flags(&track->cluster[1]);
         else
             track->default_sample_flags =
                 track->par->codec_type == AVMEDIA_TYPE_VIDEO ?
@@ -4511,11 +4511,11 @@ static int mov_write_trun_tag(AVIOContext *pb, MOVMuxContext *mov,
             flags |= MOV_TRUN_SAMPLE_DURATION;
         if (track->cluster[i].size != track->default_size)
             flags |= MOV_TRUN_SAMPLE_SIZE;
-        if (i > first && get_sample_flags(track, &track->cluster[i]) != track->default_sample_flags)
+        if (i > first && get_sample_flags(&track->cluster[i]) != track->default_sample_flags)
             flags |= MOV_TRUN_SAMPLE_FLAGS;
     }
     if (!(flags & MOV_TRUN_SAMPLE_FLAGS) && track->entry > 0 &&
-         get_sample_flags(track, &track->cluster[0]) != track->default_sample_flags)
+         get_sample_flags(&track->cluster[0]) != track->default_sample_flags)
         flags |= MOV_TRUN_FIRST_SAMPLE_FLAGS;
     if (track->flags & MOV_TRACK_CTTS)
         flags |= MOV_TRUN_SAMPLE_CTS;
@@ -4537,7 +4537,7 @@ static int mov_write_trun_tag(AVIOContext *pb, MOVMuxContext *mov,
         avio_wb32(pb, moof_size + 8 + track->data_offset +
                       track->cluster[first].pos); /* data offset */
     if (flags & MOV_TRUN_FIRST_SAMPLE_FLAGS)
-        avio_wb32(pb, get_sample_flags(track, &track->cluster[first]));
+        avio_wb32(pb, get_sample_flags(&track->cluster[first]));
 
     for (i = first; i < end; i++) {
         if (flags & MOV_TRUN_SAMPLE_DURATION)
@@ -4545,7 +4545,7 @@ static int mov_write_trun_tag(AVIOContext *pb, MOVMuxContext *mov,
         if (flags & MOV_TRUN_SAMPLE_SIZE)
             avio_wb32(pb, track->cluster[i].size);
         if (flags & MOV_TRUN_SAMPLE_FLAGS)
-            avio_wb32(pb, get_sample_flags(track, &track->cluster[i]));
+            avio_wb32(pb, get_sample_flags(&track->cluster[i]));
         if (flags & MOV_TRUN_SAMPLE_CTS)
             avio_wb32(pb, track->cluster[i].cts);
     }

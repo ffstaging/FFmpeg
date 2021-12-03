@@ -56,7 +56,8 @@ static void tlog_ref(void *ctx, AVFrame *ref, int end)
             ref->linesize[0], ref->linesize[1], ref->linesize[2], ref->linesize[3],
             ref->pts, ref->pkt_pos);
 
-    if (ref->width) {
+    switch(ref->type) {
+    case AVMEDIA_TYPE_VIDEO:
         ff_tlog(ctx, " a:%d/%d s:%dx%d i:%c iskey:%d type:%c",
                 ref->sample_aspect_ratio.num, ref->sample_aspect_ratio.den,
                 ref->width, ref->height,
@@ -64,12 +65,13 @@ static void tlog_ref(void *ctx, AVFrame *ref, int end)
                 ref->top_field_first ? 'T' : 'B',    /* Top / Bottom */
                 ref->key_frame,
                 av_get_picture_type_char(ref->pict_type));
-    }
-    if (ref->nb_samples) {
+        break;
+    case AVMEDIA_TYPE_AUDIO:
         ff_tlog(ctx, " cl:%"PRId64"d n:%d r:%d",
                 ref->channel_layout,
                 ref->nb_samples,
                 ref->sample_rate);
+        break;
     }
 
     ff_tlog(ctx, "]%s", end ? "\n" : "");

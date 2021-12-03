@@ -81,6 +81,8 @@ typedef struct MOVFragmentInfo {
     int64_t tfrf_offset;
     int size;
     uint32_t first_sample_flags;
+    /* ranges from 1 (the first ‘traf’ is numbered 1) in each ‘moof’ */
+    uint32_t traf_index;
 } MOVFragmentInfo;
 
 typedef struct MOVTrack {

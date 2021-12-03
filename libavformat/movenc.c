@@ -4627,6 +4627,7 @@ static int mov_add_tfra_entries(AVIOContext *pb, MOVMuxContext *mov, int tracks,
                                 int size)
 {
     int i;
+    uint32_t index = 0;
     for (i = 0; i < mov->nb_streams; i++) {
         MOVTrack *track = &mov->tracks[i];
         MOVFragmentInfo *info;
@@ -4658,6 +4659,7 @@ static int mov_add_tfra_entries(AVIOContext *pb, MOVMuxContext *mov, int tracks,
             info->time = 0;
         }
         info->tfrf_offset = 0;
+        info->traf_index = ++index;
         mov_write_tfrf_tags(pb, mov, track);
     }
     return 0;
@@ -4959,7 +4961,7 @@ static int mov_write_tfra_tag(AVIOContext *pb, MOVTrack *track)
             continue;
         avio_wb64(pb, track->frag_info[i].time);
         avio_wb64(pb, track->frag_info[i].offset + track->data_offset);
-        avio_w8(pb, 1); /* traf number */
+        avio_w8(pb, track->frag_info[i].traf_index); /* traf number */
         avio_w8(pb, 1); /* trun number */
         avio_w8(pb, 1); /* sample number */
     }

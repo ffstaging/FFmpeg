@@ -180,6 +180,9 @@ int ff_set_common_formats_from_list(AVFilterContext *ctx, const int *fmts);
 av_warn_unused_result
 int ff_add_channel_layout(AVFilterChannelLayouts **l, uint64_t channel_layout);
 
+av_warn_unused_result
+int ff_add_subtitle_type(AVFilterFormats **avff, int64_t fmt);
+
 /**
  * Add *ref as a new reference to f.
  */

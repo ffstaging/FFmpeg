@@ -27297,6 +27297,69 @@ ffmpeg -i INPUT -filter_complex "showspeaker=format=colon:style='@{\\c&HDD0000&\
 @end example
 @end itemize
 
+
+@section splitcc
+
+Split-out closed-caption/A53 subtitles from video frame side data.
+
+This filter provides an input and an output for video frames, which are just passed through without modification.
+The second out provides subtitle frames which are extracted from video frame side data.
+
+Inputs:
+@itemize
+@item 0: Video [ALL]
+@end itemize
+
+Outputs:
+@itemize
+@item 0: Video (same as input)
+@item 1: Subtitles [TEXT]
+@end itemize
+
+It accepts the following parameters:
+
+@table @option
+
+@item use_cc_styles
+Emit closed caption style header.
+This will make closed captions appear in white font with a black rectangle background.
+
+@item real_time
+Emit subtitle events as they are decoded for real-time display.
+
+@item real_time_latency_msec
+Minimum elapsed time between emitting real-time subtitle events.
+Only applies to real_time mode.
+
+@item data_field
+Select data field. Possible values:
+
+@table @samp
+@item auto
+Pick first one that appears.
+@item first
+@item second
+@end table
+
+@end table
+
+@subsection Examples
+
+@itemize
+@item
+Extract closed captions as text subtitle stream and overlay it onto the video in cc style (black bar background):
+@example
+ffmpeg -i "https://streams.videolan.org/streams/ts/CC/NewsStream-608-ac3.ts" -filter_complex  "[0:v:0]splitcc=use_cc_styles=1[vid1][sub1];[vid1][sub1]overlaytextsubs" output.mkv
+@end example
+
+@item
+A nicer variant, using realtime output from cc_dec and rendering it with the render_latest_only parameter from overlaytextsubs to avoid ghosting by timely overlap.
+@example
+ffmpeg -i "https://streams.videolan.org/streams/ts/CC/NewsStream-608-ac3.ts" -filter_complex  "[0:v:0]splitcc=real_time=1:real_time_latency_msec=200[vid1][sub1];[vid1][sub1]overlaytextsubs=render_latest_only=1" output.mkv
+@end example
+@end itemize
+
+
 @section textsub2video
 
 Converts text subtitles to video frames.

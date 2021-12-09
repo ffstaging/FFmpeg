@@ -123,6 +123,11 @@ static void webvtt_new_line_cb(void *priv, int forced)
     webvtt_print(priv, "\n");
 }
 
+static void webvtt_hard_space_cb(void *priv)
+{
+    webvtt_print(priv, "&nbsp;");
+}
+
 static void webvtt_style_cb(void *priv, char style, int close)
 {
     if (style == 's') // strikethrough unsupported
@@ -147,6 +152,7 @@ static void webvtt_end_cb(void *priv)
 static const ASSCodesCallbacks webvtt_callbacks = {
     .text             = webvtt_text_cb,
     .new_line         = webvtt_new_line_cb,
+    .hard_space       = webvtt_hard_space_cb,
     .style            = webvtt_style_cb,
     .color            = NULL,
     .font_name        = NULL,

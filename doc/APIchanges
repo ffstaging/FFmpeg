@@ -14,6 +14,30 @@ libavutil:     2021-04-27
 
 API changes, most recent first:
 
+2021-12-05 - xxxxxxxxxx - lavc 59.15.100 - avcodec.h
+  Deprecate avcodec_encode_subtitle(), use regular encode api now
+
+2021-12-05 - xxxxxxxxxx - lavc 59.15.100 - codec_desc.h
+  Add avcodec_descriptor_get_subtitle_format()
+
+2021-12-05 - xxxxxxxxxx - lavc 59.15.100 - avcodec.h
+  Deprecate avsubtitle_free()
+  Deprecate avcodec_decode_subtitle2(), use regular decode api now
+
+2021-12-05 - xxxxxxxxxx - lavu 57.11.100 - frame.h
+  Add AVMediaType field to AVFrame
+  Add Fields for carrying subtitle data to AVFrame
+  (subtitle_areas, subtitle_header, subtitle_pts, start/end time, etc.)
+  Add av_frame_get_buffer2() and deprecate av_frame_get_buffer()
+
+2021-12-05 - xxxxxxxxxx - lavu 57.11.100 - subfmt.h
+  Add struct AVSubtitleArea (replaces AVSubtitle)
+  Add av_get_subtitle_fmt_name() and av_get_subtitle_fmt()
+
+2021-12-05 - xxxxxxxxxx - lavu 57.11.100 - subfmt.h
+  Add enum AVSubtitleType (moved from lavc), add new values, deprecate existing
+
+2021-11-xx - xxxxxxxxxx - lavfi 8.19.100 - avfilter.h
 2022-01-04 - 78dc21b123e - lavu 57.16.100 - frame.h
   Add AV_FRAME_DATA_DOVI_METADATA.
 

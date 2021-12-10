@@ -35,6 +35,7 @@
 #include "libavutil/frame.h"
 #include "libavutil/log.h"
 #include "libavutil/pixfmt.h"
+#include "libavutil/subfmt.h"
 #include "libavutil/rational.h"
 
 #include "codec.h"
@@ -2256,24 +2257,6 @@ typedef struct AVHWAccel {
 /**
  * @}
  */
-
-enum AVSubtitleType {
-    SUBTITLE_NONE,
-
-    SUBTITLE_BITMAP,                ///< A bitmap, pict will be set
-
-    /**
-     * Plain text, the text field must be set by the decoder and is
-     * authoritative. ass and pict fields may contain approximations.
-     */
-    SUBTITLE_TEXT,
-
-    /**
-     * Formatted text, the ass field must be set by the decoder and is
-     * authoritative. pict and text fields may contain approximations.
-     */
-    SUBTITLE_ASS,
-};
 
 #define AV_SUBTITLE_FLAG_FORCED 0x00000001
 

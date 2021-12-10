@@ -109,16 +109,16 @@
         end="00:00:54.500"><span region="Default">Hide these tags:<br/>also hide these tags:<br/>but show this: {normal text}</span></p>
       <p
         begin="00:00:54.501"
-        end="00:01:00.500"><span region="Default"><br/>\ N is a forced line break<br/>\ h is a hard space<br/>Normal spaces at the start and at the end of the line are trimmed while hard spaces are not trimmed.<br/>The\hline\hwill\hnever\hbreak\hautomatically\hright\hbefore\hor\hafter\ha\hhard\hspace.\h:-D</span></p>
+        end="00:01:00.500"><span region="Default"><br/>\ N is a forced line break<br/>\ h is a hard space<br/>Normal spaces at the start and at the end of the line are trimmed while hard spaces are not trimmed.<br/>The line will never break automatically right before or after a hard space. :-D</span></p>
       <p
         begin="00:00:54.501"
-        end="00:00:56.500"><span region="Default"><br/>\h\h\h\h\hA (05 hard spaces followed by a letter)<br/>A (Normal  spaces followed by a letter)<br/>A (No hard spaces followed by a letter)</span></p>
+        end="00:00:56.500"><span region="Default"><br/>     A (05 hard spaces followed by a letter)<br/>A (Normal  spaces followed by a letter)<br/>A (No hard spaces followed by a letter)</span></p>
       <p
         begin="00:00:56.501"
-        end="00:00:58.500"><span region="Default">\h\h\h\h\hA (05 hard spaces followed by a letter)<br/>A (Normal  spaces followed by a letter)<br/>A (No hard spaces followed by a letter)<br/>Show this: \TEST and this: \-)</span></p>
+        end="00:00:58.500"><span region="Default">     A (05 hard spaces followed by a letter)<br/>A (Normal  spaces followed by a letter)<br/>A (No hard spaces followed by a letter)<br/>Show this: \TEST and this: \-)</span></p>
       <p
         begin="00:00:58.501"
-        end="00:01:00.500"><span region="Default"><br/>A letter followed by 05 hard spaces: A\h\h\h\h\h<br/>A letter followed by normal  spaces: A<br/>A letter followed by no hard spaces: A<br/>05 hard  spaces between letters: A\h\h\h\h\hA<br/>5 normal spaces between letters: A     A<br/><br/>^--Forced line break</span></p>
+        end="00:01:00.500"><span region="Default"><br/>A letter followed by 05 hard spaces: A     <br/>A letter followed by normal  spaces: A<br/>A letter followed by no hard spaces: A<br/>05 hard  spaces between letters: A     A<br/>5 normal spaces between letters: A     A<br/><br/>^--Forced line break</span></p>
       <p
         begin="00:01:00.501"
         end="00:01:02.500"><span region="Default">Both line should be strikethrough,<br/>yes.<br/>Correctly closed tags<br/>should be hidden.</span></p>

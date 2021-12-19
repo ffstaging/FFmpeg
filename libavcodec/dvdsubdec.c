@@ -44,6 +44,7 @@ typedef struct DVDSubContext
   uint8_t  used_color[256];
 #ifdef DEBUG
   int sub_id;
+  int dump_imgs;
 #endif
 } DVDSubContext;
 
@@ -597,8 +598,9 @@ static int dvdsub_decode(AVCodecContext *avctx,
     ff_dlog(NULL, "start=%d ms end =%d ms\n",
             sub->start_display_time,
             sub->end_display_time);
-    ppm_save(ppm_name, sub->rects[0]->data[0],
-             sub->rects[0]->w, sub->rects[0]->h, (uint32_t*) sub->rects[0]->data[1]);
+    if (ctx->dump_imgs)
+        ppm_save(ppm_name, sub->rects[0]->data[0],
+                 sub->rects[0]->w, sub->rects[0]->h, (uint32_t*) sub->rects[0]->data[1]);
     }
 #endif
 
@@ -745,6 +747,9 @@ static const AVOption options[] = {
     { "palette", "set the global palette", OFFSET(palette_str), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, SD },
     { "ifo_palette", "obtain the global palette from .IFO file", OFFSET(ifo_str), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, SD },
     { "forced_subs_only", "Only show forced subtitles", OFFSET(forced_subs_only), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, SD},
+#ifdef DEBUG
+    { "dump_imgs", "Dump subtitle images to disk", OFFSET(dump_imgs), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, SD},
+#endif
     { NULL }
 };
 static const AVClass dvdsub_class = {

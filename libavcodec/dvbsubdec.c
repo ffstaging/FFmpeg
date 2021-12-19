@@ -137,6 +137,9 @@ typedef struct DVBSubContext {
 
     DVBSubRegionDisplay *display_list;
     DVBSubDisplayDefinition *display_definition;
+#ifdef DEBUG
+  int dump_imgs;
+#endif
 } DVBSubContext;
 
 
@@ -1534,11 +1537,11 @@ static int save_display_set(DVBSubContext *ctx)
 
         }
 
-        snprintf(filename, sizeof(filename), "dvbs.%d", fileno_index);
-
-        png_save(ctx, filename, pbuf, width, height);
-
-        av_freep(&pbuf);
+        if (ctx->dump_imgs) {
+            snprintf(filename, sizeof(filename), "dvbs.%d", fileno_index);
+            png_save(ctx, filename, pbuf, width, height);
+            av_freep(&pbuf);
+        }
     }
 
     fileno_index++;
@@ -1730,6 +1733,9 @@ static const AVOption options[] = {
     {"compute_edt", "compute end of time using pts or timeout", OFFSET(compute_edt), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DS},
     {"compute_clut", "compute clut when not available(-1) or only once (-2) or always(1) or never(0)", OFFSET(compute_clut), AV_OPT_TYPE_BOOL, {.i64 = -1}, -2, 1, DS},
     {"dvb_substream", "", OFFSET(substream), AV_OPT_TYPE_INT, {.i64 = -1}, -1, 63, DS},
+#ifdef DEBUG
+    { "dump_imgs", "Dump subtitle images to disk", OFFSET(dump_imgs), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DS},
+#endif
     {NULL}
 };
 static const AVClass dvbsubdec_class = {

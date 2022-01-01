@@ -139,8 +139,9 @@ static const AVOption options[] = {
     { "height", "Output video height", OFFSET(oh), AV_OPT_TYPE_STRING, { .str="w*ch/cw" }, 0, 255, .flags = FLAGS },
     { "format", "Output pixel format", OFFSET(output_format_str), AV_OPT_TYPE_STRING, { .str = "same" }, .flags = FLAGS },
     { "async_depth", "Internal parallelization depth, the higher the value the higher the latency.", OFFSET(async_depth), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, .flags = FLAGS },
+#ifdef QSV_HAVE_SCALING_CONFIG
     { "scale_mode", "scale mode: 0=auto, 1=low power, 2=high quality", OFFSET(scale_mode), AV_OPT_TYPE_INT, { .i64 = MFX_SCALING_MODE_DEFAULT }, MFX_SCALING_MODE_DEFAULT, MFX_SCALING_MODE_QUALITY, .flags = FLAGS, "scale mode" },
-
+#endif
     { NULL }
 };
 
@@ -304,6 +305,7 @@ static int config_output(AVFilterLink *outlink)
     QSVVPPParam     param = { NULL };
     QSVVPPCrop      crop  = { 0 };
     mfxExtBuffer    *ext_buf[ENH_FILTERS_COUNT];
+    mfxVersion      mfx_version;
     AVFilterLink    *inlink = ctx->inputs[0];
     enum AVPixelFormat in_format;
 
@@ -316,6 +318,11 @@ static int config_output(AVFilterLink *outlink)
     param.num_ext_buf   = 0;
     param.ext_buf       = ext_buf;
     param.async_depth   = vpp->async_depth;
+
+    if (MFXQueryVersion(vpp->qsv->session, &mfx_version) < 0) {
+        av_log(ctx, AV_LOG_ERROR, "Failed to query mfx version.\n");
+        return AVERROR(EINVAL);
+    }
 
     if (inlink->format == AV_PIX_FMT_QSV) {
          if (!inlink->hw_frames_ctx || !inlink->hw_frames_ctx->data)
@@ -467,19 +474,20 @@ static int config_output(AVFilterLink *outlink)
 #endif
     }
 
-    if (inlink->w != outlink->w || inlink->h != outlink->h) {
 #ifdef QSV_HAVE_SCALING_CONFIG
-        memset(&vpp->scale_conf, 0, sizeof(mfxExtVPPScaling));
-        vpp->scale_conf.Header.BufferId    = MFX_EXTBUFF_VPP_SCALING;
-        vpp->scale_conf.Header.BufferSz    = sizeof(mfxExtVPPScaling);
-        vpp->scale_conf.ScalingMode        = vpp->scale_mode;
+    if (inlink->w != outlink->w || inlink->h != outlink->h) {
+        if (QSV_RUNTIME_VERSION_ATLEAST(mfx_version, 1, 19)) {
+            memset(&vpp->scale_conf, 0, sizeof(mfxExtVPPScaling));
+            vpp->scale_conf.Header.BufferId    = MFX_EXTBUFF_VPP_SCALING;
+            vpp->scale_conf.Header.BufferSz    = sizeof(mfxExtVPPScaling);
+            vpp->scale_conf.ScalingMode        = vpp->scale_mode;
 
-        param.ext_buf[param.num_ext_buf++] = (mfxExtBuffer*)&vpp->scale_conf;
-#else
-        av_log(ctx, AV_LOG_WARNING, "The QSV VPP Scale option is "
-            "not supported with this MSDK version.\n");
-#endif
+            param.ext_buf[param.num_ext_buf++] = (mfxExtBuffer*)&vpp->scale_conf;
+        } else
+            av_log(ctx, AV_LOG_WARNING, "The QSV VPP Scale option is "
+                "not supported with this MSDK version.\n");
     }
+#endif
 
     if (vpp->use_frc || vpp->use_crop || vpp->deinterlace || vpp->denoise ||
         vpp->detail || vpp->procamp || vpp->rotate || vpp->hflip ||

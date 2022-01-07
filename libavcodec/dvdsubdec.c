@@ -509,7 +509,7 @@ static void ppm_save(const char *filename, uint8_t *bitmap, int w, int h,
     int back[3] = {0, 255, 0};  /* green background */
     FILE *f;
 
-    f = fopen(filename, "w");
+    f = fopen(filename, "wb");
     if (!f) {
         perror(filename);
         return;

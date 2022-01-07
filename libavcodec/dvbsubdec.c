@@ -1394,7 +1394,7 @@ static void png_save(DVBSubContext *ctx, const char *filename, uint32_t *bitmap,
 
     snprintf(fname, sizeof(fname), "%s.ppm", filename);
 
-    f = fopen(fname, "w");
+    f = fopen(fname, "wb");
     if (!f) {
         perror(fname);
         return;
@@ -1416,7 +1416,7 @@ static void png_save(DVBSubContext *ctx, const char *filename, uint32_t *bitmap,
 
     snprintf(fname2, sizeof(fname2), "%s-a.pgm", filename);
 
-    f = fopen(fname2, "w");
+    f = fopen(fname2, "wb");
     if (!f) {
         perror(fname2);
         return;

@@ -54,7 +54,7 @@ static int ass_decode_frame(AVCodecContext *avctx, void *data, int *got_sub_ptr,
     if (!sub->rects[0])
         return AVERROR(ENOMEM);
     sub->num_rects = 1;
-    sub->rects[0]->type = SUBTITLE_ASS;
+    sub->rects[0]->type = AV_SUBTITLE_FMT_ASS;
     sub->rects[0]->ass  = av_strdup(avpkt->data);
     if (!sub->rects[0]->ass)
         return AVERROR(ENOMEM);

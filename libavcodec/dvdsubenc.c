@@ -274,7 +274,7 @@ static int encode_dvd_subtitles(AVCodecContext* avctx, AVPacket* avpkt,
         return AVERROR(EINVAL);
 
     for (i = 0; i < rects; i++)
-        if (frame->subtitle_areas[i]->type != SUBTITLE_BITMAP) {
+        if (frame->subtitle_areas[i]->type != AV_SUBTITLE_FMT_BITMAP) {
             av_log(avctx, AV_LOG_ERROR, "Bitmap subtitle required\n");
             return AVERROR(EINVAL);
         }

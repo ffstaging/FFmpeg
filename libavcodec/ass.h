@@ -83,7 +83,7 @@ static inline int avpriv_ass_add_rect(AVSubtitle *sub, const char *dialog,
     rects[sub->num_rects]       = av_mallocz(sizeof(*rects[0]));
     if (!rects[sub->num_rects])
         return AVERROR(ENOMEM);
-    rects[sub->num_rects]->type = SUBTITLE_ASS;
+    rects[sub->num_rects]->type = AV_SUBTITLE_FMT_ASS;
     ass_str = avpriv_ass_get_dialog(readorder, layer, style, speaker, dialog);
     if (!ass_str)
         return AVERROR(ENOMEM);

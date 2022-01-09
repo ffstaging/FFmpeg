@@ -407,7 +407,7 @@ static int decode_dvd_subtitles(DVDSubContext *ctx, AVSubtitle *sub_header,
                 sub_header->rects[0]->y = y1;
                 sub_header->rects[0]->w = w;
                 sub_header->rects[0]->h = h;
-                sub_header->rects[0]->type = SUBTITLE_BITMAP;
+                sub_header->rects[0]->type = AV_SUBTITLE_FMT_BITMAP;
                 sub_header->rects[0]->linesize[0] = w;
                 sub_header->rects[0]->flags = is_menu ? AV_SUBTITLE_FLAG_FORCED : 0;
             }

@@ -796,7 +796,7 @@ static int save_subtitle_set(AVCodecContext *avctx, AVSubtitle *sub, int *got_ou
             rect->w = region->width;
             rect->h = region->height;
             rect->nb_colors = (1 << region->depth);
-            rect->type      = SUBTITLE_BITMAP;
+            rect->type      = AV_SUBTITLE_FMT_BITMAP;
             rect->linesize[0] = region->width;
 
             clut = get_clut(ctx, region->clut);

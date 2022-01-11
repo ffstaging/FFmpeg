@@ -3548,3 +3548,14 @@ enum AVMediaType avcodec_get_type(enum AVCodecID codec_id)
     const AVCodecDescriptor *desc = avcodec_descriptor_get(codec_id);
     return desc ? desc->type : AVMEDIA_TYPE_UNKNOWN;
 }
+
+enum AVSubtitleType avcodec_descriptor_get_subtitle_format(const AVCodecDescriptor *codec_descriptor)
+{
+    if(codec_descriptor->props & AV_CODEC_PROP_BITMAP_SUB)
+        return AV_SUBTITLE_FMT_BITMAP;
+
+    if(codec_descriptor->props & AV_CODEC_PROP_TEXT_SUB)
+        return AV_SUBTITLE_FMT_ASS;
+
+    return AV_SUBTITLE_FMT_UNKNOWN;
+}

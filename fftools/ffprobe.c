@@ -2452,22 +2452,42 @@ static void show_packet(WriterContext *w, InputFile *ifile, AVPacket *pkt, int p
     fflush(stdout);
 }
 
-static void show_subtitle(WriterContext *w, AVSubtitle *sub, AVStream *stream,
+static void show_subtitle(WriterContext *w, AVFrame *sub, AVStream *stream,
                           AVFormatContext *fmt_ctx)
 {
     AVBPrint pbuf;
+    const char *s;
 
     av_bprint_init(&pbuf, 1, AV_BPRINT_SIZE_UNLIMITED);
 
     writer_print_section_header(w, SECTION_ID_SUBTITLE);
 
     print_str ("media_type",         "subtitle");
-    print_ts  ("pts",                 sub->pts);
-    print_time("pts_time",            sub->pts, &AV_TIME_BASE_Q);
-    print_int ("format",              sub->format);
-    print_int ("start_display_time",  sub->start_display_time);
-    print_int ("end_display_time",    sub->end_display_time);
-    print_int ("num_rects",           sub->num_rects);
+    print_ts  ("pts",                 sub->subtitle_timing.start_pts);
+    print_time("pts_time",            sub->subtitle_timing.start_pts, &AV_TIME_BASE_Q);
+    print_time("duration",            sub->subtitle_timing.duration, &AV_TIME_BASE_Q);
+
+    // Remain compatible with previous outputs
+    switch (sub->format) {
+    case AV_SUBTITLE_FMT_BITMAP:
+        print_int ("format",         0);
+        break;
+    case AV_SUBTITLE_FMT_TEXT:
+        print_int ("format",         1);
+        break;
+    case AV_SUBTITLE_FMT_ASS:
+        print_int ("format",         1);
+        break;
+    default:
+        print_int ("format",         -1);
+        break;
+    }
+
+    s = av_get_subtitle_fmt_name(sub->format);
+    if (s) print_str    ("format_str", s);
+    else   print_str_opt("format_str", "unknown");
+
+    print_int ("num_subtitle_rects",           sub->num_subtitle_areas);
 
     writer_print_section_footer(w);
 
@@ -2635,7 +2655,6 @@ static av_always_inline int process_frame(WriterContext *w,
     AVFormatContext *fmt_ctx = ifile->fmt_ctx;
     AVCodecContext *dec_ctx = ifile->streams[pkt->stream_index].dec_ctx;
     AVCodecParameters *par = ifile->streams[pkt->stream_index].st->codecpar;
-    AVSubtitle sub;
     int ret = 0, got_frame = 0;
 
     clear_log(1);
@@ -2643,6 +2662,7 @@ static av_always_inline int process_frame(WriterContext *w,
         switch (par->codec_type) {
         case AVMEDIA_TYPE_VIDEO:
         case AVMEDIA_TYPE_AUDIO:
+        case AVMEDIA_TYPE_SUBTITLE:
             if (*packet_new) {
                 ret = avcodec_send_packet(dec_ctx, pkt);
                 if (ret == AVERROR(EAGAIN)) {
@@ -2661,12 +2681,6 @@ static av_always_inline int process_frame(WriterContext *w,
                 }
             }
             break;
-
-        case AVMEDIA_TYPE_SUBTITLE:
-            if (*packet_new)
-                ret = avcodec_decode_subtitle2(dec_ctx, &sub, &got_frame, pkt);
-            *packet_new = 0;
-            break;
         default:
             *packet_new = 0;
         }
@@ -2681,12 +2695,11 @@ static av_always_inline int process_frame(WriterContext *w,
         nb_streams_frames[pkt->stream_index]++;
         if (do_show_frames)
             if (is_sub)
-                show_subtitle(w, &sub, ifile->streams[pkt->stream_index].st, fmt_ctx);
+                show_subtitle(w, frame, ifile->streams[pkt->stream_index].st, fmt_ctx);
             else
                 show_frame(w, frame, ifile->streams[pkt->stream_index].st, fmt_ctx);
-        if (is_sub)
-            avsubtitle_free(&sub);
     }
+
     return got_frame || *packet_new;
 }
 

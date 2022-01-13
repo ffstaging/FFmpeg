@@ -153,7 +153,6 @@ typedef struct Clock {
 /* Common struct for handling all types of decoded data and allocated render buffers. */
 typedef struct Frame {
     AVFrame *frame;
-    AVSubtitle sub;
     int serial;
     double pts;           /* presentation timestamp for the frame */
     double duration;      /* estimated duration of the frame */
@@ -574,7 +573,7 @@ static int decoder_init(Decoder *d, AVCodecContext *avctx, PacketQueue *queue, S
     return 0;
 }
 
-static int decoder_decode_frame(Decoder *d, AVFrame *frame, AVSubtitle *sub) {
+static int decoder_decode_frame(Decoder *d, AVFrame *frame) {
     int ret = AVERROR(EAGAIN);
 
     for (;;) {
@@ -608,6 +607,9 @@ static int decoder_decode_frame(Decoder *d, AVFrame *frame, AVSubtitle *sub) {
                             }
                         }
                         break;
+                    case AVMEDIA_TYPE_SUBTITLE:
+                        ret = avcodec_receive_frame(d->avctx, frame);
+                        break;
                 }
                 if (ret == AVERROR_EOF) {
                     d->finished = d->pkt_serial;
@@ -640,25 +642,11 @@ static int decoder_decode_frame(Decoder *d, AVFrame *frame, AVSubtitle *sub) {
             av_packet_unref(d->pkt);
         } while (1);
 
-        if (d->avctx->codec_type == AVMEDIA_TYPE_SUBTITLE) {
-            int got_frame = 0;
-            ret = avcodec_decode_subtitle2(d->avctx, sub, &got_frame, d->pkt);
-            if (ret < 0) {
-                ret = AVERROR(EAGAIN);
-            } else {
-                if (got_frame && !d->pkt->data) {
-                    d->packet_pending = 1;
-                }
-                ret = got_frame ? 0 : (d->pkt->data ? AVERROR(EAGAIN) : AVERROR_EOF);
-            }
-            av_packet_unref(d->pkt);
+        if (avcodec_send_packet(d->avctx, d->pkt) == AVERROR(EAGAIN)) {
+            av_log(d->avctx, AV_LOG_ERROR, "Receive_frame and send_packet both returned EAGAIN, which is an API violation.\n");
+            d->packet_pending = 1;
         } else {
-            if (avcodec_send_packet(d->avctx, d->pkt) == AVERROR(EAGAIN)) {
-                av_log(d->avctx, AV_LOG_ERROR, "Receive_frame and send_packet both returned EAGAIN, which is an API violation.\n");
-                d->packet_pending = 1;
-            } else {
-                av_packet_unref(d->pkt);
-            }
+            av_packet_unref(d->pkt);
         }
     }
 }
@@ -671,7 +659,6 @@ static void decoder_destroy(Decoder *d) {
 static void frame_queue_unref_item(Frame *vp)
 {
     av_frame_unref(vp->frame);
-    avsubtitle_free(&vp->sub);
 }
 
 static int frame_queue_init(FrameQueue *f, PacketQueue *pktq, int max_size, int keep_last)
@@ -969,7 +956,7 @@ static void video_image_display(VideoState *is)
         if (frame_queue_nb_remaining(&is->subpq) > 0) {
             sp = frame_queue_peek(&is->subpq);
 
-            if (vp->pts >= sp->pts + ((float) sp->sub.start_display_time / 1000)) {
+            if (vp->pts >= sp->pts) {
                 if (!sp->uploaded) {
                     uint8_t* pixels[4];
                     int pitch[4];
@@ -981,25 +968,27 @@ static void video_image_display(VideoState *is)
                     if (realloc_texture(&is->sub_texture, SDL_PIXELFORMAT_ARGB8888, sp->width, sp->height, SDL_BLENDMODE_BLEND, 1) < 0)
                         return;
 
-                    for (i = 0; i < sp->sub.num_rects; i++) {
-                        AVSubtitleRect *sub_rect = sp->sub.rects[i];
+                    for (i = 0; i < sp->frame->num_subtitle_areas; i++) {
+                        AVSubtitleArea *area = sp->frame->subtitle_areas[i];
+                        SDL_Rect sdl_rect = { .x = area->x, .y = area->y, .w = area->w, .h = area->h };
 
-                        sub_rect->x = av_clip(sub_rect->x, 0, sp->width );
-                        sub_rect->y = av_clip(sub_rect->y, 0, sp->height);
-                        sub_rect->w = av_clip(sub_rect->w, 0, sp->width  - sub_rect->x);
-                        sub_rect->h = av_clip(sub_rect->h, 0, sp->height - sub_rect->y);
+                        area->x = av_clip(area->x, 0, sp->width );
+                        area->y = av_clip(area->y, 0, sp->height);
+                        area->w = av_clip(area->w, 0, sp->width  - area->x);
+                        area->h = av_clip(area->h, 0, sp->height - area->y);
 
                         is->sub_convert_ctx = sws_getCachedContext(is->sub_convert_ctx,
-                            sub_rect->w, sub_rect->h, AV_PIX_FMT_PAL8,
-                            sub_rect->w, sub_rect->h, AV_PIX_FMT_BGRA,
+                            area->w, area->h, AV_PIX_FMT_PAL8,
+                            area->w, area->h, AV_PIX_FMT_BGRA,
                             0, NULL, NULL, NULL);
                         if (!is->sub_convert_ctx) {
                             av_log(NULL, AV_LOG_FATAL, "Cannot initialize the conversion context\n");
                             return;
                         }
-                        if (!SDL_LockTexture(is->sub_texture, (SDL_Rect *)sub_rect, (void **)pixels, pitch)) {
-                            sws_scale(is->sub_convert_ctx, (const uint8_t * const *)sub_rect->data, sub_rect->linesize,
-                                      0, sub_rect->h, pixels, pitch);
+                        if (!SDL_LockTexture(is->sub_texture, &sdl_rect, (void **)pixels, pitch)) {
+                            const uint8_t* data[2] = { area->buf[0]->data, (uint8_t *)&area->pal };
+                            sws_scale(is->sub_convert_ctx, data, area->linesize,
+                                      0, area->h, pixels, pitch);
                             SDL_UnlockTexture(is->sub_texture);
                         }
                     }
@@ -1026,16 +1015,18 @@ static void video_image_display(VideoState *is)
 #if USE_ONEPASS_SUBTITLE_RENDER
         SDL_RenderCopy(renderer, is->sub_texture, NULL, &rect);
 #else
-        int i;
+        unsigned i;
         double xratio = (double)rect.w / (double)sp->width;
         double yratio = (double)rect.h / (double)sp->height;
-        for (i = 0; i < sp->sub.num_rects; i++) {
-            SDL_Rect *sub_rect = (SDL_Rect*)sp->sub.rects[i];
-            SDL_Rect target = {.x = rect.x + sub_rect->x * xratio,
-                               .y = rect.y + sub_rect->y * yratio,
-                               .w = sub_rect->w * xratio,
-                               .h = sub_rect->h * yratio};
-            SDL_RenderCopy(renderer, is->sub_texture, sub_rect, &target);
+        for (i = 0; i < sp->frame->num_subtitle_areas; i++) {
+            AVSubtitleArea *area = sp->frame->subtitle_areas[i];
+            SDL_Rect sub_rect = { .x = area->x, .y = area->y,
+                                  .w = area->w, .h = area->h};
+            SDL_Rect target = {.x = rect.x + sub_rect.x * xratio,
+                               .y = rect.y + sub_rect.y * yratio,
+                               .w = sub_rect.w * xratio,
+                               .h = sub_rect.h * yratio};
+            SDL_RenderCopy(renderer, is->sub_texture, &sub_rect, &target);
         }
 #endif
     }
@@ -1639,19 +1630,20 @@ retry:
                         sp2 = NULL;
 
                     if (sp->serial != is->subtitleq.serial
-                            || (is->vidclk.pts > (sp->pts + ((float) sp->sub.end_display_time / 1000)))
-                            || (sp2 && is->vidclk.pts > (sp2->pts + ((float) sp2->sub.start_display_time / 1000))))
+                            || (is->vidclk.pts > (sp->pts + ((float) sp->frame->subtitle_timing.duration / AV_TIME_BASE)))
+                            || (sp2 && is->vidclk.pts > (sp2->pts)))
                     {
                         if (sp->uploaded) {
                             int i;
-                            for (i = 0; i < sp->sub.num_rects; i++) {
-                                AVSubtitleRect *sub_rect = sp->sub.rects[i];
+                            for (i = 0; i < sp->frame->num_subtitle_areas; i++) {
+                                AVSubtitleArea *area = sp->frame->subtitle_areas[i];
+                                SDL_Rect sdl_rect = { .x = area->x, .y = area->y, .w = area->w, .h = area->h };
                                 uint8_t *pixels;
                                 int pitch, j;
 
-                                if (!SDL_LockTexture(is->sub_texture, (SDL_Rect *)sub_rect, (void **)&pixels, &pitch)) {
-                                    for (j = 0; j < sub_rect->h; j++, pixels += pitch)
-                                        memset(pixels, 0, sub_rect->w << 2);
+                                if (!SDL_LockTexture(is->sub_texture, &sdl_rect, (void **)&pixels, &pitch)) {
+                                    for (j = 0; j < area->h; j++, pixels += pitch)
+                                        memset(pixels, 0, area->w << 2);
                                     SDL_UnlockTexture(is->sub_texture);
                                 }
                             }
@@ -1762,7 +1754,7 @@ static int get_video_frame(VideoState *is, AVFrame *frame)
 {
     int got_picture;
 
-    if ((got_picture = decoder_decode_frame(&is->viddec, frame, NULL)) < 0)
+    if ((got_picture = decoder_decode_frame(&is->viddec, frame)) < 0)
         return -1;
 
     if (got_picture) {
@@ -2032,7 +2024,7 @@ static int audio_thread(void *arg)
         return AVERROR(ENOMEM);
 
     do {
-        if ((got_frame = decoder_decode_frame(&is->auddec, frame, NULL)) < 0)
+        if ((got_frame = decoder_decode_frame(&is->auddec, frame)) < 0)
             goto the_end;
 
         if (got_frame) {
@@ -2229,14 +2221,14 @@ static int subtitle_thread(void *arg)
         if (!(sp = frame_queue_peek_writable(&is->subpq)))
             return 0;
 
-        if ((got_subtitle = decoder_decode_frame(&is->subdec, NULL, &sp->sub)) < 0)
+        if ((got_subtitle = decoder_decode_frame(&is->subdec, sp->frame)) < 0)
             break;
 
         pts = 0;
 
-        if (got_subtitle && sp->sub.format == 0) {
-            if (sp->sub.pts != AV_NOPTS_VALUE)
-                pts = sp->sub.pts / (double)AV_TIME_BASE;
+        if (got_subtitle && sp->frame->format == AV_SUBTITLE_FMT_BITMAP) {
+            if (sp->frame->subtitle_timing.start_pts != AV_NOPTS_VALUE)
+                pts = (double)sp->frame->subtitle_timing.start_pts / (double)AV_TIME_BASE;
             sp->pts = pts;
             sp->serial = is->subdec.pkt_serial;
             sp->width = is->subdec.avctx->width;
@@ -2246,7 +2238,7 @@ static int subtitle_thread(void *arg)
             /* now we can update the picture count */
             frame_queue_push(&is->subpq);
         } else if (got_subtitle) {
-            avsubtitle_free(&sp->sub);
+            av_frame_free(&sp->frame);
         }
     }
     return 0;

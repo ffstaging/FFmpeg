@@ -22,7 +22,7 @@
 #include <string.h>
 
 #include "avcodec.h"
-#include "ass.h"
+#include "libavutil/ass_internal.h"
 #include "internal.h"
 #include "libavutil/internal.h"
 #include "libavutil/mem.h"

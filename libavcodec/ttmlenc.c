@@ -32,8 +32,7 @@
 #include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
 #include "libavutil/internal.h"
-#include "ass_split.h"
-#include "ass.h"
+#include "libavutil/ass_split_internal.h"
 #include "ttmlenc.h"
 
 typedef struct {
@@ -95,7 +94,7 @@ static int ttml_encode_frame(AVCodecContext *avctx, uint8_t *buf,
             return AVERROR(EINVAL);
         }
 
-        dialog = ff_ass_split_dialog(s->ass_ctx, ass);
+        dialog = avpriv_ass_split_dialog(s->ass_ctx, ass);
         if (!dialog)
             return AVERROR(ENOMEM);
 
@@ -107,7 +106,7 @@ static int ttml_encode_frame(AVCodecContext *avctx, uint8_t *buf,
             av_bprintf(&s->buffer, "\">");
         }
 
-        ret = ff_ass_split_override_codes(&ttml_callbacks, s, dialog->text);
+        ret = avpriv_ass_split_override_codes(&ttml_callbacks, s, dialog->text);
         if (ret < 0) {
             int log_level = (ret != AVERROR_INVALIDDATA ||
                              avctx->err_recognition & AV_EF_EXPLODE) ?
@@ -118,7 +117,7 @@ static int ttml_encode_frame(AVCodecContext *avctx, uint8_t *buf,
                    av_err2str(ret));
 
             if (log_level == AV_LOG_ERROR) {
-                ff_ass_free_dialog(&dialog);
+                avpriv_ass_free_dialog(&dialog);
                 return ret;
             }
         }
@@ -126,7 +125,7 @@ static int ttml_encode_frame(AVCodecContext *avctx, uint8_t *buf,
         if (dialog->style)
             av_bprintf(&s->buffer, "</span>");
 
-        ff_ass_free_dialog(&dialog);
+        avpriv_ass_free_dialog(&dialog);
     }
 
     if (!av_bprint_is_complete(&s->buffer))
@@ -148,7 +147,7 @@ static av_cold int ttml_encode_close(AVCodecContext *avctx)
 {
     TTMLContext *s = avctx->priv_data;
 
-    ff_ass_split_free(s->ass_ctx);
+    avpriv_ass_split_free(s->ass_ctx);
 
     av_bprint_finalize(&s->buffer, NULL);
 
@@ -372,7 +371,7 @@ static av_cold int ttml_encode_init(AVCodecContext *avctx)
 
     av_bprint_init(&s->buffer, 0, AV_BPRINT_SIZE_UNLIMITED);
 
-    if (!(s->ass_ctx = ff_ass_split(avctx->subtitle_header))) {
+    if (!(s->ass_ctx = avpriv_ass_split(avctx->subtitle_header))) {
         return AVERROR_INVALIDDATA;
     }
 

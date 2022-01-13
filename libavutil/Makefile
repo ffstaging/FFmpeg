@@ -101,6 +101,8 @@ BUILT_HEADERS = avconfig.h                                              \
 OBJS = adler32.o                                                        \
        aes.o                                                            \
        aes_ctr.o                                                        \
+       ass.o                                                            \
+       ass_split.o                                                      \
        audio_fifo.o                                                     \
        avstring.o                                                       \
        avsscanf.o                                                       \

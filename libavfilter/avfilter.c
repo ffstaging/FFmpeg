@@ -42,6 +42,7 @@
 #include "formats.h"
 #include "framepool.h"
 #include "internal.h"
+#include "subtitles.h"
 
 static void tlog_ref(void *ctx, AVFrame *ref, int end)
 {
@@ -1451,6 +1452,9 @@ int ff_inlink_make_frame_writable(AVFilterLink *link, AVFrame **rframe)
         break;
     case AVMEDIA_TYPE_AUDIO:
         out = ff_get_audio_buffer(link, frame->nb_samples);
+        break;
+    case AVMEDIA_TYPE_SUBTITLE:
+        out = ff_get_subtitles_buffer(link, link->format);
         break;
     default:
         return AVERROR(EINVAL);

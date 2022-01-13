@@ -2995,9 +2995,12 @@ void av_parser_close(AVCodecParserContext *s);
  * @{
  */
 
+ /**
+  * @deprecated Use @ref avcodec_encode_subtitle2() instead.
+  */
+attribute_deprecated
 int avcodec_encode_subtitle(AVCodecContext *avctx, uint8_t *buf, int buf_size,
                             const AVSubtitle *sub);
-
 
 /**
  * @}

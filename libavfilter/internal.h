@@ -89,6 +89,7 @@ struct AVFilterPad {
     union {
         AVFrame *(*video)(AVFilterLink *link, int w, int h);
         AVFrame *(*audio)(AVFilterLink *link, int nb_samples);
+        AVFrame *(*subtitle)(AVFilterLink *link, int format);
     } get_buffer;
 
     /**

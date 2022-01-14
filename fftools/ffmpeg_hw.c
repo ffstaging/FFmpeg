@@ -449,7 +449,7 @@ int hw_device_setup_for_encode(OutputStream *ost)
     AVBufferRef *frames_ref = NULL;
     int i;
 
-    if (ost->filter) {
+    if (ost->filter && ost->filter->filter) {
         frames_ref = av_buffersink_get_hw_frames_ctx(ost->filter->filter);
         if (frames_ref &&
             ((AVHWFramesContext*)frames_ref->data)->format ==

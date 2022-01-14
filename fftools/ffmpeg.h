@@ -349,17 +349,10 @@ typedef struct InputStream {
     struct { /* previous decoded subtitle and related variables */
         int got_output;
         int ret;
-        AVSubtitle subtitle;
+        AVFrame *subtitle;
     } prev_sub;
 
-    struct sub2video {
-        int64_t last_pts;
-        int64_t end_pts;
-        AVFifoBuffer *sub_queue;    ///< queue of AVSubtitle* before filter init
-        AVFrame *frame;
-        int w, h;
-        unsigned int initialize; ///< marks if sub2video_update should force an initialization
-    } sub2video;
+    AVBufferRef *subtitle_header;
 
     /* decoded data from this stream goes into all those filters
      * currently video and audio only */
@@ -658,8 +651,6 @@ void check_filter_outputs(void);
 int filtergraph_is_simple(FilterGraph *fg);
 int init_simple_filtergraph(InputStream *ist, OutputStream *ost);
 int init_complex_filtergraph(FilterGraph *fg);
-
-void sub2video_update(InputStream *ist, int64_t heartbeat_pts, AVSubtitle *sub);
 
 int ifilter_parameters_from_frame(InputFilter *ifilter, const AVFrame *frame);
 

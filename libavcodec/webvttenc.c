@@ -39,6 +39,8 @@ typedef struct {
     int count;
     char stack[WEBVTT_STACK_SIZE];
     int stack_ptr;
+    int has_text;
+    int drawing_scale;
 } WebVTTContext;
 
 #ifdef __GNUC__
@@ -115,17 +117,24 @@ static void webvtt_style_apply(WebVTTContext *s, const char *style)
 static void webvtt_text_cb(void *priv, const char *text, int len)
 {
     WebVTTContext *s = priv;
-    av_bprint_append_data(&s->buffer, text, len);
+    if (!s->drawing_scale) {
+        av_bprint_append_data(&s->buffer, text, len);
+        s->has_text = 1;
+    }
 }
 
 static void webvtt_new_line_cb(void *priv, int forced)
 {
-    webvtt_print(priv, "\n");
+    WebVTTContext *s = priv;
+    if (!s->drawing_scale)
+        webvtt_print(priv, "\n");
 }
 
 static void webvtt_hard_space_cb(void *priv)
 {
-    webvtt_print(priv, "&nbsp;");
+    WebVTTContext *s = priv;
+    if (!s->drawing_scale)
+        webvtt_print(priv, "&nbsp;");
 }
 
 static void webvtt_style_cb(void *priv, char style, int close)
@@ -149,6 +158,12 @@ static void webvtt_end_cb(void *priv)
     webvtt_stack_push_pop(priv, 0, 1);
 }
 
+static void dialog_drawing_mode_cb(void *priv, int scale)
+{
+    WebVTTContext *s = priv;
+    s->drawing_scale = scale;
+}
+
 static const ASSCodesCallbacks webvtt_callbacks = {
     .text             = webvtt_text_cb,
     .new_line         = webvtt_new_line_cb,
@@ -161,6 +176,7 @@ static const ASSCodesCallbacks webvtt_callbacks = {
     .cancel_overrides = webvtt_cancel_overrides_cb,
     .move             = NULL,
     .end              = webvtt_end_cb,
+    .drawing_mode     = dialog_drawing_mode_cb,
 };
 
 static void ensure_ass_context(WebVTTContext* s, const AVFrame* frame)
@@ -211,9 +227,13 @@ static int webvtt_encode_frame(AVCodecContext* avctx, AVPacket* avpkt,
         }
 
         if (ass) {
+            const unsigned saved_len = s->buffer.len;
 
-            if (i > 0)
+            if (i > 0 && s->buffer.len > 0)
                 webvtt_new_line_cb(s, 0);
+
+            s->drawing_scale = 0;
+            s->has_text = 0;
 
             dialog = avpriv_ass_split_dialog(s->ass_ctx, ass);
             if (!dialog)
@@ -221,6 +241,9 @@ static int webvtt_encode_frame(AVCodecContext* avctx, AVPacket* avpkt,
             webvtt_style_apply(s, dialog->style);
             avpriv_ass_split_override_codes(&webvtt_callbacks, s, dialog->text);
             avpriv_ass_free_dialog(&dialog);
+
+            if (!s->has_text)
+                s->buffer.len = saved_len;
         }
     }
 

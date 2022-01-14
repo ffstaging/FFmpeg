@@ -26947,6 +26947,43 @@ ffmpeg -i "http://streams.videolan.org/samples/sub/SSA/subtitle_testing_complex.
 @end example
 @end itemize
 
+@section stripstyles
+
+Remove all inline styles from subtitle events.
+
+Inputs:
+@itemize
+@item 0: Subtitles[TEXT]
+@end itemize
+
+Outputs:
+@itemize
+@item 0: Subtitles[TEXT]
+@end itemize
+
+It accepts the following parameters:
+
+@table @option
+@item remove_animated
+Also remove text which is subject to animation (default: true)
+Usually, animated text elements are used used in addition to static subtitle lines for creating effects, so in most cases it is safe to remove the animation content.
+If subtitle text is missing, try setting this to false.
+
+@item select_layer
+Process only ASS subtitle events from a specific layer. This allows to filter out certain effects where an ASS author duplicates the text onto multiple layers.
+
+@end table
+
+@subsection Examples
+
+@itemize
+@item
+Remove styles and animations from ASS subtitles and output events from ass layer 0 only. Then convert asn save as SRT stream:
+@example
+ffmpeg -i "https://streams.videolan.org/samples/sub/SSA/subtitle_testing_complex.mkv" -filter_complex "[0:1]stripstyles=select_layer=0" -map 0 -c:s srt output.mkv
+@end example
+@end itemize
+
 
 @section textmod
 

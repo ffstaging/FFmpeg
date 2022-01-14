@@ -561,6 +561,7 @@ extern const AVFilter ff_avf_showwavespic;
 extern const AVFilter ff_vaf_spectrumsynth;
 extern const AVFilter ff_sf_censor;
 extern const AVFilter ff_sf_showspeaker;
+extern const AVFilter ff_sf_stripstyles;
 extern const AVFilter ff_sf_textmod;
 extern const AVFilter ff_svf_graphicsub2video;
 extern const AVFilter ff_svf_textsub2video;

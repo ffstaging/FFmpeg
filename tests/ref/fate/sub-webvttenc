@@ -132,26 +132,26 @@ but show this: {normal text}
 \ N is a forced line break
 \ h is a hard space
 Normal spaces at the start and at the end of the line are trimmed while hard spaces are not trimmed.
-The\hline\hwill\hnever\hbreak\hautomatically\hright\hbefore\hor\hafter\ha\hhard\hspace.\h:-D
+The line will never break automatically right before or after a hard space. :-D
 
 00:54.501 --> 00:56.500
 
-\h\h\h\h\hA (05 hard spaces followed by a letter)
+     A (05 hard spaces followed by a letter)
 A (Normal  spaces followed by a letter)
 A (No hard spaces followed by a letter)
 
 00:56.501 --> 00:58.500
-\h\h\h\h\hA (05 hard spaces followed by a letter)
+     A (05 hard spaces followed by a letter)
 A (Normal  spaces followed by a letter)
 A (No hard spaces followed by a letter)
 Show this: \TEST and this: \-)
 
 00:58.501 --> 01:00.500
 
-A letter followed by 05 hard spaces: A\h\h\h\h\h
+A letter followed by 05 hard spaces: A     
 A letter followed by normal  spaces: A
 A letter followed by no hard spaces: A
-05 hard  spaces between letters: A\h\h\h\h\hA
+05 hard  spaces between letters: A     A
 5 normal spaces between letters: A     A
 
 ^--Forced line break

@@ -484,6 +484,7 @@ int avpriv_ass_split_override_codes(const ASSCodesCallbacks *callbacks, void *pr
     while (buf && *buf) {
         if (text && callbacks->text &&
             (sscanf(buf, "\\%1[nN]", new_line) == 1 ||
+             sscanf(buf, "\\%1[hH]", new_line) == 1 ||
              !strncmp(buf, "{\\", 2))) {
             callbacks->text(priv, text, text_len);
             text = NULL;
@@ -491,6 +492,12 @@ int avpriv_ass_split_override_codes(const ASSCodesCallbacks *callbacks, void *pr
         if (sscanf(buf, "\\%1[nN]", new_line) == 1) {
             if (callbacks->new_line)
                 callbacks->new_line(priv, new_line[0] == 'N');
+            buf += 2;
+        } else if (sscanf(buf, "\\%1[hH]", new_line) == 1) {
+            if (callbacks->hard_space)
+                callbacks->hard_space(priv);
+            else if (callbacks->text)
+                callbacks->text(priv, " ", 1);
             buf += 2;
         } else if (!strncmp(buf, "{\\", 2)) {
             buf++;

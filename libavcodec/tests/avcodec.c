@@ -107,8 +107,6 @@ int main(void){
             continue;
         }
         if (is_encoder) {
-            if (codec->type == AVMEDIA_TYPE_SUBTITLE ^ !!codec->encode_sub)
-                ERR("Encoder %s is both subtitle encoder and not subtitle encoder.");
             if (!!codec->encode_sub + !!codec->encode2 + !!codec->receive_packet != 1)
                 ERR("Encoder %s does not implement exactly one encode API.\n");
             if (codec->update_thread_context || codec->update_thread_context_for_user || codec->bsfs)

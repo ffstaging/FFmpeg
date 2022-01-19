@@ -122,6 +122,14 @@ const AVCodecDescriptor *avcodec_descriptor_next(const AVCodecDescriptor *prev);
 const AVCodecDescriptor *avcodec_descriptor_get_by_name(const char *name);
 
 /**
+ * Return subtitle format from a codec descriptor
+ *
+ * @param codec_descriptor codec descriptor
+ * @return                 the subtitle type (e.g. bitmap, text)
+ */
+enum AVSubtitleType avcodec_descriptor_get_subtitle_format(const AVCodecDescriptor *codec_descriptor);
+
+/**
  * @}
  */
 

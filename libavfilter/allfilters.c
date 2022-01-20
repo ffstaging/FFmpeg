@@ -358,10 +358,11 @@ extern const AVFilter ff_vf_oscilloscope;
 extern const AVFilter ff_vf_overlay;
 extern const AVFilter ff_vf_overlay_opencl;
 extern const AVFilter ff_vf_overlay_qsv;
-extern const AVFilter ff_vf_overlaygraphicsubs;
-extern const AVFilter ff_vf_overlay_vaapi;
 extern const AVFilter ff_vf_overlay_vulkan;
 extern const AVFilter ff_vf_overlay_cuda;
+extern const AVFilter ff_vf_overlaygraphicsubs;
+extern const AVFilter ff_vf_overlaytextsubs;
+extern const AVFilter ff_vf_overlay_vaapi;
 extern const AVFilter ff_vf_owdenoise;
 extern const AVFilter ff_vf_pad;
 extern const AVFilter ff_vf_pad_opencl;
@@ -548,6 +549,7 @@ extern const AVFilter ff_avf_showwaves;
 extern const AVFilter ff_avf_showwavespic;
 extern const AVFilter ff_vaf_spectrumsynth;
 extern const AVFilter ff_svf_graphicsub2video;
+extern const AVFilter ff_svf_textsub2video;
 
 /* multimedia sources */
 extern const AVFilter ff_avsrc_amovie;

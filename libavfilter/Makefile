@@ -306,6 +306,7 @@ OBJS-$(CONFIG_GBLUR_FILTER)                  += vf_gblur.o
 OBJS-$(CONFIG_GBLUR_VULKAN_FILTER)           += vf_gblur_vulkan.o vulkan.o vulkan_filter.o
 OBJS-$(CONFIG_GEQ_FILTER)                    += vf_geq.o
 OBJS-$(CONFIG_GRADFUN_FILTER)                += vf_gradfun.o
+OBJS-$(CONFIG_GRAPHICSUB2TEXT_FILTER)        += sf_graphicsub2text.o
 OBJS-$(CONFIG_GRAPHICSUB2VIDEO_FILTER)       += vf_overlaygraphicsubs.o framesync.o
 OBJS-$(CONFIG_GRAPHMONITOR_FILTER)           += f_graphmonitor.o
 OBJS-$(CONFIG_GRAYWORLD_FILTER)              += vf_grayworld.o

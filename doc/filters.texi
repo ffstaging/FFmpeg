@@ -27063,6 +27063,61 @@ ffmpeg -i "https://streams.videolan.org/ffmpeg/mkv_subtitles.mkv" -filter_comple
 @end example
 @end itemize
 
+@section graphicsub2text
+
+Converts graphic subtitles to text subtitles by performing OCR.
+
+For this filter to be available, ffmpeg needs to be compiled with libtesseract (see https://github.com/tesseract-ocr/tesseract).
+Language models need to be downloaded from https://github.com/tesseract-ocr/tessdata and put into as subfolder named 'tessdata' or into a folder specified via the environment variable 'TESSDATA_PREFIX'.
+The path can also be specified via filter option (see below).
+
+Note: These models are including the data for both OCR modes.
+
+Inputs:
+- 0: Subtitles [bitmap]
+
+Outputs:
+- 0: Subtitles [text]
+
+It accepts the following parameters:
+
+@table @option
+@item ocr_mode
+The character recognition mode to use.
+
+Supported OCR modes are:
+
+@table @var
+@item 0, tesseract
+This is the classic libtesseract operation mode. It is fast but less accurate than LSTM.
+@item 1, lstm
+Newer OCR implementation based on ML models. Provides usually better results, requires more processing resources.
+@item 2, both
+Use a combination of both modes.
+@end table
+
+@item tessdata_path
+The path to a folder containing the language models to be used.
+
+@item language
+The recognition language. It needs to match the first three characters of a  language model file in the tessdata path.
+
+@end table
+
+
+@subsection Examples
+
+@itemize
+@item
+Convert DVB graphic subtitles to ASS (text) subtitles
+
+Note: For this to work, you need to have the data file 'eng.traineddata' in a 'tessdata' subfolder (see above).
+@example
+ffmpeg -loglevel verbose -i "https://streams.videolan.org/streams/ts/video_subs_ttxt%2Bdvbsub.ts" -filter_complex "[0:13]graphicsub2text=delay_when_no_duration=1" -c:s ass -y output.mkv
+@end example
+@end itemize
+
+
 @section graphicsub2video
 
 Renders graphic subtitles as video frames.

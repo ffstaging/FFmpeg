@@ -33,8 +33,11 @@ int main(void)
 {
     uint8_t md5val[16];
     int i;
-    volatile uint8_t in[1000]; // volatile to workaround http://llvm.org/bugs/show_bug.cgi?id=20849
-    // FIXME remove volatile once it has been fixed and all fate clients are updated
+
+#if 1 || defined(__clang__) && defined(__clang_major__) && __clang_major__ < 4
+    volatile // volatile to workaround http://llvm.org/bugs/show_bug.cgi?id=20849
+#endif
+    uint8_t in[1000];
 
     for (i = 0; i < 1000; i++)
         in[i] = i * i;

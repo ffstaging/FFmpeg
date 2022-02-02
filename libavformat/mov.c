@@ -1487,6 +1487,7 @@ static int mov_read_mvhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     int i;
     int64_t creation_time;
+    int32_t poster_time;
     int version = avio_r8(pb); /* version */
     avio_rb24(pb); /* flags */
 
@@ -1525,11 +1526,20 @@ static int mov_read_mvhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     avio_rb32(pb); /* preview time */
     avio_rb32(pb); /* preview duration */
-    avio_rb32(pb); /* poster time */
+    poster_time = avio_rb32(pb); /* poster time */
     avio_rb32(pb); /* selection time */
     avio_rb32(pb); /* selection duration */
     avio_rb32(pb); /* current time */
     avio_rb32(pb); /* next track ID */
+
+    av_log(c->fc, AV_LOG_TRACE, "poster_time = %i, time_scale = %i\n", poster_time, c->time_scale);
+    if(poster_time && c->time_scale && c->time_scale > 0) {
+        char buffer[32];
+        float poster_time_location = (float)poster_time / c->time_scale;
+        snprintf(buffer, sizeof(buffer), "%.2f", poster_time_location);
+        /* This will appear as a TAG in the format section of FFProbe output using -show_format */
+        av_dict_set(&c->fc->metadata, "poster_time", buffer, 0);
+    }
 
     return 0;
 }

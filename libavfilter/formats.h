@@ -183,6 +183,9 @@ av_warn_unused_result
 int ff_add_channel_layout(AVFilterChannelLayouts **l,
                           const AVChannelLayout *channel_layout);
 
+av_warn_unused_result
+int ff_add_subtitle_type(AVFilterFormats **avff, int64_t fmt);
+
 /**
  * Add *ref as a new reference to f.
  */

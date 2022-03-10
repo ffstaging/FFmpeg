@@ -751,10 +751,13 @@ static int teletext_init_decoder(AVCodecContext *avctx)
 
     switch (ctx->format_id) {
         case 0:
+            avctx->subtitle_type = AV_SUBTITLE_FMT_BITMAP;
             return 0;
         case 1:
+            avctx->subtitle_type = AV_SUBTITLE_FMT_ASS;
             return ff_ass_subtitle_header_default(avctx);
         case 2:
+            avctx->subtitle_type = AV_SUBTITLE_FMT_ASS;
             return my_ass_subtitle_header(avctx);
     }
     return AVERROR_BUG;

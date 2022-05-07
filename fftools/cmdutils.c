@@ -818,7 +818,7 @@ FILE *get_preset_file(char *filename, size_t filename_size,
 
     if (is_path) {
         av_strlcpy(filename, preset_name, filename_size);
-        f = fopen(filename, "r");
+        f = av_fopen_utf8(filename, "r");
     } else {
 #if HAVE_GETMODULEHANDLE && defined(_WIN32)
         char datadir[MAX_PATH], *ls;
@@ -842,13 +842,13 @@ FILE *get_preset_file(char *filename, size_t filename_size,
                 continue;
             snprintf(filename, filename_size, "%s%s/%s.ffpreset", base[i],
                      i != 1 ? "" : "/.ffmpeg", preset_name);
-            f = fopen(filename, "r");
+            f = av_fopen_utf8(filename, "r");
             if (!f && codec_name) {
                 snprintf(filename, filename_size,
                          "%s%s/%s-%s.ffpreset",
                          base[i], i != 1 ? "" : "/.ffmpeg", codec_name,
                          preset_name);
-                f = fopen(filename, "r");
+                f = av_fopen_utf8(filename, "r");
             }
         }
     }

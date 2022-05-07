@@ -1261,9 +1261,9 @@ static void do_video_stats(OutputStream *ost, int frame_size)
 
     /* this is executed just the first time do_video_stats is called */
     if (!vstats_file) {
-        vstats_file = fopen(vstats_filename, "w");
+        vstats_file = av_fopen_utf8(vstats_filename, "w");
         if (!vstats_file) {
-            perror("fopen");
+            perror("av_fopen_utf8");
             exit_program(1);
         }
     }

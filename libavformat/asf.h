@@ -111,7 +111,7 @@ extern const AVMetadataConv ff_asf_metadata_conv[];
  *         is unsupported by this function and 0 otherwise.
  */
 int ff_asf_handle_byte_array(AVFormatContext *s, const char *name,
-                             int val_len);
+                             uint32_t val_len);
 
 
 #define ASF_PACKET_FLAG_ERROR_CORRECTION_PRESENT 0x80 //1000 0000

@@ -153,7 +153,7 @@ static inline int win32_##name(const char *filename_utf8) \
     wchar_t *filename_w;                                  \
     int ret;                                              \
                                                           \
-    if (utf8towchar(filename_utf8, &filename_w))          \
+    if (get_extended_win32_path(filename_utf8, &filename_w)) \
         return -1;                                        \
     if (!filename_w)                                      \
         goto fallback;                                    \
@@ -177,7 +177,7 @@ static inline int win32_##name(const char *filename_utf8, partype par) \
     wchar_t *filename_w;                                  \
     int ret;                                              \
                                                           \
-    if (utf8towchar(filename_utf8, &filename_w))          \
+    if (get_extended_win32_path(filename_utf8, &filename_w)) \
         return -1;                                        \
     if (!filename_w)                                      \
         goto fallback;                                    \
@@ -199,9 +199,9 @@ static inline int win32_rename(const char *src_utf8, const char *dest_utf8)
     wchar_t *src_w, *dest_w;
     int ret;
 
-    if (utf8towchar(src_utf8, &src_w))
+    if (get_extended_win32_path(src_utf8, &src_w))
         return -1;
-    if (utf8towchar(dest_utf8, &dest_w)) {
+    if (get_extended_win32_path(dest_utf8, &dest_w)) {
         av_free(src_w);
         return -1;
     }

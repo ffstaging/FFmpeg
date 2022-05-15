@@ -49,7 +49,23 @@
 #  ifdef stat
 #   undef stat
 #  endif
-#  define stat _stati64
+#  define stat win32_stat
+
+    struct win32_stat
+    {
+        _dev_t         st_dev;
+        _ino_t         st_ino;
+        unsigned short st_mode;
+        short          st_nlink;
+        short          st_uid;
+        short          st_gid;
+        _dev_t         st_rdev;
+        __int64        st_size;
+        __time64_t     st_atime;
+        __time64_t     st_mtime;
+        __time64_t     st_ctime;
+    };
+
 #  ifdef fstat
 #   undef fstat
 #  endif
@@ -153,7 +169,7 @@ static inline int win32_##name(const char *filename_utf8) \
     wchar_t *filename_w;                                  \
     int ret;                                              \
                                                           \
-    if (utf8towchar(filename_utf8, &filename_w))          \
+    if (get_extended_win32_path(filename_utf8, &filename_w)) \
         return -1;                                        \
     if (!filename_w)                                      \
         goto fallback;                                    \
@@ -177,7 +193,7 @@ static inline int win32_##name(const char *filename_utf8, partype par) \
     wchar_t *filename_w;                                  \
     int ret;                                              \
                                                           \
-    if (utf8towchar(filename_utf8, &filename_w))          \
+    if (get_extended_win32_path(filename_utf8, &filename_w)) \
         return -1;                                        \
     if (!filename_w)                                      \
         goto fallback;                                    \
@@ -199,9 +215,9 @@ static inline int win32_rename(const char *src_utf8, const char *dest_utf8)
     wchar_t *src_w, *dest_w;
     int ret;
 
-    if (utf8towchar(src_utf8, &src_w))
+    if (get_extended_win32_path(src_utf8, &src_w))
         return -1;
-    if (utf8towchar(dest_utf8, &dest_w)) {
+    if (get_extended_win32_path(dest_utf8, &dest_w)) {
         av_free(src_w);
         return -1;
     }

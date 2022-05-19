@@ -37,7 +37,7 @@
 #include "atsc_a53.h"
 #include "sei.h"
 
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && !defined(_LIB)
 #define X264_API_IMPORTS 1
 #endif
 

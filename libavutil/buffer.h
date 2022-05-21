@@ -145,6 +145,14 @@ void av_buffer_default_free(void *opaque, uint8_t *data);
  * @return a new AVBufferRef referring to the same AVBuffer as buf or NULL on
  * failure.
  */
+AVBufferRef *av_ref_from_buffer(AVBuffer *buf);
+
+/**
+ * Create a new reference to an AVBuffer.
+ *
+ * @return a new AVBufferRef referring to the same AVBuffer as buf or NULL on
+ * failure.
+ */
 AVBufferRef *av_buffer_ref(const AVBufferRef *buf);
 
 /**

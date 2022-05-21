@@ -100,6 +100,22 @@ AVBufferRef *av_buffer_allocz(size_t size)
     return ret;
 }
 
+AVBufferRef *av_ref_from_buffer(AVBuffer *buf)
+{
+    AVBufferRef *ref = av_mallocz(sizeof(*ref));
+
+    if (!ref)
+        return NULL;
+
+    ref->buffer = buf;
+    ref->data   = buf->data;
+    ref->size   = buf->size;
+
+    atomic_fetch_add_explicit(&buf->refcount, 1, memory_order_relaxed);
+
+    return ref;
+}
+
 AVBufferRef *av_buffer_ref(const AVBufferRef *buf)
 {
     AVBufferRef *ret = av_mallocz(sizeof(*ret));

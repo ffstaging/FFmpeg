@@ -22,12 +22,17 @@
 #include "buffer.h"
 #include "common.h"
 #include "hwcontext.h"
+
+#include <stdatomic.h>
+
+#include "buffer_internal.h"
 #include "hwcontext_internal.h"
 #include "imgutils.h"
 #include "log.h"
 #include "mem.h"
 #include "pixdesc.h"
 #include "pixfmt.h"
+#include "thread.h"
 
 static const HWContextType * const hw_table[] = {
 #if CONFIG_CUDA
@@ -80,6 +85,84 @@ static const char *const hw_type_names[] = {
     [AV_HWDEVICE_TYPE_VULKAN] = "vulkan",
 };
 
+#define DEVICE_REGISTRY_SIZE 1024
+
+static AVMutex mutex;
+static int is_mutex_initialized = 0;
+static int max_device_reg_id = 1;
+static AVBuffer *hw_device_registry[DEVICE_REGISTRY_SIZE];
+
+static int register_hw_device(const AVBufferRef *ref)
+{
+    AVHWDeviceContext *ctx = (AVHWDeviceContext*)ref->data;
+    const int reg_id = max_device_reg_id;
+
+    if (ctx == NULL)
+        return AVERROR(EINVAL);
+
+    if (!is_mutex_initialized) {
+        int ret;
+        ret = ff_mutex_init(&mutex, NULL);
+        if (ret) {
+            av_log(ctx, AV_LOG_ERROR, "hwcontext: mutex initialization failed! Error code: %d\n", ret);
+            return AVERROR(EINVAL);
+        }
+
+        is_mutex_initialized = 1;
+    }
+
+    ff_mutex_lock(&mutex);
+
+    for (int i = 0; i < max_device_reg_id; ++i) {
+        if (hw_device_registry[i] != NULL && hw_device_registry[i] == ref->buffer) {
+            ff_mutex_unlock(&mutex);
+            return i;
+        }
+    }
+
+    if (max_device_reg_id >= DEVICE_REGISTRY_SIZE) {
+        ff_mutex_unlock(&mutex);
+        av_log(ctx, AV_LOG_ERROR, "Device registry limit (%d) reached. Please check for excessive device creation.", DEVICE_REGISTRY_SIZE);
+        return AVERROR(ENOMEM);
+    }
+
+    hw_device_registry[reg_id] = ref->buffer;
+    max_device_reg_id++;
+
+    ff_mutex_unlock(&mutex);
+
+    return reg_id;
+}
+
+static void unregister_hw_device(const AVHWDeviceContext *ctx)
+{
+    if (ctx == NULL || !is_mutex_initialized)
+        return;
+
+    ff_mutex_lock(&mutex);
+
+    hw_device_registry[ctx->internal->registered_device_id] = NULL;
+
+    ff_mutex_unlock(&mutex);
+}
+
+static AVBufferRef *get_registered_hw_device(int registered_id)
+{
+    if (registered_id <= 0 || registered_id >= max_device_reg_id)
+        return NULL;
+
+    ff_mutex_lock(&mutex);
+
+    if (hw_device_registry[registered_id] != NULL && hw_device_registry[registered_id]->data != NULL) {
+        AVBufferRef *ref = av_ref_from_buffer(hw_device_registry[registered_id]);
+        return ref;
+    }
+
+    ff_mutex_unlock(&mutex);
+
+    return NULL;
+}
+
 enum AVHWDeviceType av_hwdevice_find_type_by_name(const char *name)
 {
     int type;
@@ -123,6 +206,8 @@ static const AVClass hwdevice_ctx_class = {
 static void hwdevice_ctx_free(void *opaque, uint8_t *data)
 {
     AVHWDeviceContext *ctx = (AVHWDeviceContext*)data;
+
+    unregister_hw_device(ctx);
 
     /* uninit might still want access the hw context and the user
      * free() callback might destroy it, so uninit has to be called first */
@@ -612,7 +697,7 @@ int av_hwdevice_ctx_create(AVBufferRef **pdevice_ref, enum AVHWDeviceType type,
                            const char *device, AVDictionary *opts, int flags)
 {
     AVBufferRef *device_ref = NULL;
-    AVHWDeviceContext *device_ctx;
+    AVHWDeviceContext *device_ctx = NULL;
     int ret = 0;
 
     device_ref = av_hwdevice_ctx_alloc(type);
@@ -632,22 +717,58 @@ int av_hwdevice_ctx_create(AVBufferRef **pdevice_ref, enum AVHWDeviceType type,
     if (ret < 0)
         goto fail;
 
+    ret = register_hw_device(device_ref);
+    if (ret < 0)
+        goto fail;
+
     ret = av_hwdevice_ctx_init(device_ref);
     if (ret < 0)
         goto fail;
 
+    device_ctx->internal->registered_device_id = ret;
+
     *pdevice_ref = device_ref;
     return 0;
 fail:
+    unregister_hw_device(device_ctx);
     av_buffer_unref(&device_ref);
     *pdevice_ref = NULL;
     return ret;
 }
 
-int av_hwdevice_ctx_create_derived_opts(AVBufferRef **dst_ref_ptr,
-                                        enum AVHWDeviceType type,
-                                        AVBufferRef *src_ref,
-                                        AVDictionary *options, int flags)
+static AVBufferRef* find_derived_hwdevice_ctx(AVBufferRef *src_ref, enum AVHWDeviceType type)
+{
+    AVBufferRef *derived_ref;
+    AVHWDeviceContext *src_ctx;
+    int i;
+
+    src_ctx = (AVHWDeviceContext*)src_ref->data;
+    if (src_ctx->type == type)
+        return src_ref;
+
+    for (i = 0; i < AV_HWDEVICE_TYPE_NB; i++)
+        if (src_ctx->internal->derived_device_ids[i]) {
+            AVBufferRef *tmp_ref = get_registered_hw_device(src_ctx->internal->derived_device_ids[i]);
+
+            if (tmp_ref) {
+                derived_ref = find_derived_hwdevice_ctx(tmp_ref, type);
+
+                if (tmp_ref != derived_ref)
+                    av_buffer_unref(&tmp_ref);
+
+                if (derived_ref)
+                    return derived_ref;
+            }
+        }
+
+    return NULL;
+}
+
+static int hwdevice_ctx_create_derived(AVBufferRef **dst_ref_ptr,
+                                       enum AVHWDeviceType type,
+                                       AVBufferRef *src_ref,
+                                       AVDictionary *options, int flags,
+                                       int get_existing)
 {
     AVBufferRef *dst_ref = NULL, *tmp_ref;
     AVHWDeviceContext *dst_ctx, *tmp_ctx;
@@ -665,6 +786,18 @@ int av_hwdevice_ctx_create_derived_opts(AVBufferRef **dst_ref_ptr,
             goto done;
         }
         tmp_ref = tmp_ctx->internal->source_device;
+    }
+
+    if (get_existing) {
+        tmp_ref = find_derived_hwdevice_ctx(src_ref, type);
+        if (tmp_ref) {
+            dst_ref = av_buffer_ref(tmp_ref);
+            if (!dst_ref) {
+                ret = AVERROR(ENOMEM);
+                goto fail;
+            }
+            goto done;
+        }
     }
 
     dst_ref = av_hwdevice_ctx_alloc(type);
@@ -688,6 +821,9 @@ int av_hwdevice_ctx_create_derived_opts(AVBufferRef **dst_ref_ptr,
                     ret = AVERROR(ENOMEM);
                     goto fail;
                 }
+                if (!tmp_ctx->internal->derived_device_ids[type])
+                    tmp_ctx->internal->derived_device_ids[type] = dst_ctx->internal->registered_device_id;
+
                 ret = av_hwdevice_ctx_init(dst_ref);
                 if (ret < 0)
                     goto fail;
@@ -712,12 +848,29 @@ fail:
     return ret;
 }
 
+int av_hwdevice_ctx_create_derived_opts(AVBufferRef **dst_ref_ptr,
+                                        enum AVHWDeviceType type,
+                                        AVBufferRef *src_ref,
+                                        AVDictionary *options, int flags)
+{
+    return hwdevice_ctx_create_derived(dst_ref_ptr, type, src_ref,
+                                       options, flags, 0);
+}
+
+int av_hwdevice_ctx_get_or_create_derived(AVBufferRef **dst_ref_ptr,
+                                          enum AVHWDeviceType type,
+                                          AVBufferRef *src_ref, int flags)
+{
+    return hwdevice_ctx_create_derived(dst_ref_ptr, type, src_ref,
+                                       NULL, flags, 1);
+}
+
 int av_hwdevice_ctx_create_derived(AVBufferRef **dst_ref_ptr,
                                    enum AVHWDeviceType type,
                                    AVBufferRef *src_ref, int flags)
 {
-    return av_hwdevice_ctx_create_derived_opts(dst_ref_ptr, type, src_ref,
-                                               NULL, flags);
+    return hwdevice_ctx_create_derived(dst_ref_ptr, type, src_ref,
+                                       NULL, flags, 0);
 }
 
 static void ff_hwframe_unmap(void *opaque, uint8_t *data)

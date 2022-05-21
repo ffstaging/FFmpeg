@@ -109,6 +109,17 @@ struct AVHWDeviceInternal {
      * context it was derived from.
      */
     AVBufferRef *source_device;
+
+    /**
+     * An array of device registration ids from device contexts which
+     * were derived from this device.
+     */
+    int derived_device_ids[AV_HWDEVICE_TYPE_NB];
+
+    /**
+     * ID under wich the hw context is registered internally.
+     */
+    int registered_device_id;
 };
 
 struct AVHWFramesInternal {

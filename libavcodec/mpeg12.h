@@ -23,6 +23,7 @@
 #define AVCODEC_MPEG12_H
 
 #include "mpegvideo.h"
+#include "libavutil/stereo3d.h"
 
 /* Start codes. */
 #define SEQ_END_CODE            0x000001b7
@@ -34,6 +35,31 @@
 #define EXT_START_CODE          0x000001b5
 #define USER_START_CODE         0x000001b2
 
+typedef struct Mpeg1Context {
+    MpegEncContext mpeg_enc_ctx;
+    int mpeg_enc_ctx_allocated; /* true if decoding context allocated */
+    int repeat_field;           /* true if we must repeat the field */
+    AVPanScan pan_scan;         /* some temporary storage for the panscan */
+    AVStereo3D stereo3d;
+    int has_stereo3d;
+    AVBufferRef *a53_buf_ref;
+    uint8_t afd;
+    int has_afd;
+    int slice_count;
+    unsigned aspect_ratio_info;
+    AVRational save_aspect;
+    int save_width, save_height, save_progressive_seq;
+    int rc_buffer_size;
+    AVRational frame_rate_ext;  /* MPEG-2 specific framerate modificator */
+    unsigned frame_rate_index;
+    int sync;                   /* Did we reach a sync point like a GOP/SEQ/KEYFrame? */
+    int closed_gop;
+    int tmpgexs;
+    int first_slice;
+    int extradata_decoded;
+    int64_t timecode_frame_start;  /*< GOP timecode frame start number, in non drop frame format */
+} Mpeg1Context;
+
 void ff_mpeg12_common_init(MpegEncContext *s);
 
 void ff_mpeg1_clean_buffers(MpegEncContext *s);
@@ -44,5 +70,7 @@ int ff_mpeg1_find_frame_end(ParseContext *pc, const uint8_t *buf, int buf_size, 
 void ff_mpeg12_find_best_frame_rate(AVRational frame_rate,
                                     int *code, int *ext_n, int *ext_d,
                                     int nonstandard);
+
+void ff_mpeg_decode_user_data(AVCodecContext *avctx, Mpeg1Context *s1, const uint8_t *p, int buf_size);
 
 #endif /* AVCODEC_MPEG12_H */

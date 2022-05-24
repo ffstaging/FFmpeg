@@ -49,7 +49,24 @@
 #  ifdef stat
 #   undef stat
 #  endif
-#  define stat _stati64
+
+#  define stat win32_stat
+
+    struct win32_stat
+    {
+        _dev_t         st_dev;     /* ID of device containing file */
+        _ino_t         st_ino;     /* inode number */
+        unsigned short st_mode;    /* protection */
+        short          st_nlink;   /* number of hard links */
+        short          st_uid;     /* user ID of owner */
+        short          st_gid;     /* group ID of owner */
+        _dev_t         st_rdev;    /* device ID (if special file) */
+        long           st_size;    /* total size, in bytes */
+        time_t         st_atime;   /* time of last access */
+        time_t         st_mtime;   /* time of last modification */
+        time_t         st_ctime;   /* time of last status change */
+    };
+
 #  ifdef fstat
 #   undef fstat
 #  endif
@@ -153,7 +170,7 @@ static inline int win32_##name(const char *filename_utf8) \
     wchar_t *filename_w;                                  \
     int ret;                                              \
                                                           \
-    if (utf8towchar(filename_utf8, &filename_w))          \
+    if (get_extended_win32_path(filename_utf8, &filename_w)) \
         return -1;                                        \
     if (!filename_w)                                      \
         goto fallback;                                    \
@@ -171,37 +188,59 @@ DEF_FS_FUNCTION(unlink, _wunlink, _unlink)
 DEF_FS_FUNCTION(mkdir,  _wmkdir,  _mkdir)
 DEF_FS_FUNCTION(rmdir,  _wrmdir , _rmdir)
 
-#define DEF_FS_FUNCTION2(name, wfunc, afunc, partype)     \
-static inline int win32_##name(const char *filename_utf8, partype par) \
-{                                                         \
-    wchar_t *filename_w;                                  \
-    int ret;                                              \
-                                                          \
-    if (utf8towchar(filename_utf8, &filename_w))          \
-        return -1;                                        \
-    if (!filename_w)                                      \
-        goto fallback;                                    \
-                                                          \
-    ret = wfunc(filename_w, par);                         \
-    av_free(filename_w);                                  \
-    return ret;                                           \
-                                                          \
-fallback:                                                 \
-    /* filename may be be in CP_ACP */                    \
-    return afunc(filename_utf8, par);                     \
+static inline int win32_access(const char *filename_utf8, int par)
+{
+    wchar_t *filename_w;
+    int ret;
+    if (get_extended_win32_path(filename_utf8, &filename_w))
+        return -1;
+    if (!filename_w)
+        goto fallback;
+    ret = _waccess(filename_w, par);
+    av_free(filename_w);
+    return ret;
+fallback:
+    return _access(filename_utf8, par);
 }
 
-DEF_FS_FUNCTION2(access, _waccess, _access, int)
-DEF_FS_FUNCTION2(stat, _wstati64, _stati64, struct stat*)
+static inline int win32_stat(const char *filename_utf8, struct stat *par)
+{
+    wchar_t *filename_w;
+    int ret;
+    struct _stati64 winstat = { 0 };
+
+    if (get_extended_win32_path(filename_utf8, &filename_w))
+        return -1;
+
+    if (filename_w) {
+        ret = _wstat64(filename_w, &winstat);
+        av_free(filename_w);
+    } else
+        ret = _stat64(filename_utf8, &winstat);
+
+    par->st_dev   = winstat.st_dev;
+    par->st_ino   = winstat.st_ino;
+    par->st_mode  = winstat.st_mode;
+    par->st_nlink = winstat.st_nlink;
+    par->st_uid   = winstat.st_uid;
+    par->st_gid   = winstat.st_gid;
+    par->st_rdev  = winstat.st_rdev;
+    par->st_size  = winstat.st_size;
+    par->st_atime = winstat.st_atime;
+    par->st_mtime = winstat.st_mtime;
+    par->st_ctime = winstat.st_ctime;
+
+    return ret;
+}
 
 static inline int win32_rename(const char *src_utf8, const char *dest_utf8)
 {
     wchar_t *src_w, *dest_w;
     int ret;
 
-    if (utf8towchar(src_utf8, &src_w))
+    if (get_extended_win32_path(src_utf8, &src_w))
         return -1;
-    if (utf8towchar(dest_utf8, &dest_w)) {
+    if (get_extended_win32_path(dest_utf8, &dest_w)) {
         av_free(src_w);
         return -1;
     }

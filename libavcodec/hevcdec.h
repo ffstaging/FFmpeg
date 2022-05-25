@@ -690,6 +690,8 @@ void ff_hevc_hls_residual_coding(HEVCContext *s, int x0, int y0,
 
 void ff_hevc_hls_mvd_coding(HEVCContext *s, int x0, int y0, int log2_cb_size);
 
+int ff_set_side_data(AVCodecContext *logctx, HEVCSEI *sei, HEVCContext *s, AVFrame *out);
+
 extern const uint8_t ff_hevc_qpel_extra_before[4];
 extern const uint8_t ff_hevc_qpel_extra_after[4];
 extern const uint8_t ff_hevc_qpel_extra[4];

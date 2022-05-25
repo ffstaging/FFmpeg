@@ -2726,23 +2726,22 @@ error:
     return res;
 }
 
-static int set_side_data(HEVCContext *s)
+int ff_set_side_data(AVCodecContext *logctx, HEVCSEI *sei, HEVCContext *s, AVFrame *out)
 {
-    AVFrame *out = s->ref->frame;
-    int ret;
+    int ret = 0;
 
-    if (s->sei.frame_packing.present &&
-        s->sei.frame_packing.arrangement_type >= 3 &&
-        s->sei.frame_packing.arrangement_type <= 5 &&
-        s->sei.frame_packing.content_interpretation_type > 0 &&
-        s->sei.frame_packing.content_interpretation_type < 3) {
+    if (sei->frame_packing.present &&
+        sei->frame_packing.arrangement_type >= 3 &&
+        sei->frame_packing.arrangement_type <= 5 &&
+        sei->frame_packing.content_interpretation_type > 0 &&
+        sei->frame_packing.content_interpretation_type < 3) {
         AVStereo3D *stereo = av_stereo3d_create_side_data(out);
         if (!stereo)
             return AVERROR(ENOMEM);
 
-        switch (s->sei.frame_packing.arrangement_type) {
+        switch (sei->frame_packing.arrangement_type) {
         case 3:
-            if (s->sei.frame_packing.quincunx_subsampling)
+            if (sei->frame_packing.quincunx_subsampling)
                 stereo->type = AV_STEREO3D_SIDEBYSIDE_QUINCUNX;
             else
                 stereo->type = AV_STEREO3D_SIDEBYSIDE;
@@ -2755,21 +2754,21 @@ static int set_side_data(HEVCContext *s)
             break;
         }
 
-        if (s->sei.frame_packing.content_interpretation_type == 2)
+        if (sei->frame_packing.content_interpretation_type == 2)
             stereo->flags = AV_STEREO3D_FLAG_INVERT;
 
-        if (s->sei.frame_packing.arrangement_type == 5) {
-            if (s->sei.frame_packing.current_frame_is_frame0_flag)
+        if (sei->frame_packing.arrangement_type == 5) {
+            if (sei->frame_packing.current_frame_is_frame0_flag)
                 stereo->view = AV_STEREO3D_VIEW_LEFT;
             else
                 stereo->view = AV_STEREO3D_VIEW_RIGHT;
         }
     }
 
-    if (s->sei.display_orientation.present &&
-        (s->sei.display_orientation.anticlockwise_rotation ||
-         s->sei.display_orientation.hflip || s->sei.display_orientation.vflip)) {
-        double angle = s->sei.display_orientation.anticlockwise_rotation * 360 / (double) (1 << 16);
+    if (sei->display_orientation.present &&
+        (sei->display_orientation.anticlockwise_rotation ||
+         sei->display_orientation.hflip || sei->display_orientation.vflip)) {
+        double angle = sei->display_orientation.anticlockwise_rotation * 360 / (double) (1 << 16);
         AVFrameSideData *rotation = av_frame_new_side_data(out,
                                                            AV_FRAME_DATA_DISPLAYMATRIX,
                                                            sizeof(int32_t) * 9);
@@ -2788,17 +2787,17 @@ static int set_side_data(HEVCContext *s)
                        * (1 - 2 * !!s->sei.display_orientation.vflip);
         av_display_rotation_set((int32_t *)rotation->data, angle);
         av_display_matrix_flip((int32_t *)rotation->data,
-                               s->sei.display_orientation.hflip,
-                               s->sei.display_orientation.vflip);
+                               sei->display_orientation.hflip,
+                               sei->display_orientation.vflip);
     }
 
     // Decrement the mastering display flag when IRAP frame has no_rasl_output_flag=1
     // so the side data persists for the entire coded video sequence.
-    if (s->sei.mastering_display.present > 0 &&
+    if (s && sei->mastering_display.present > 0 &&
         IS_IRAP(s) && s->no_rasl_output_flag) {
-        s->sei.mastering_display.present--;
+        sei->mastering_display.present--;
     }
-    if (s->sei.mastering_display.present) {
+    if (sei->mastering_display.present) {
         // HEVC uses a g,b,r ordering, which we convert to a more natural r,g,b
         const int mapping[3] = {2, 0, 1};
         const int chroma_den = 50000;
@@ -2811,25 +2810,25 @@ static int set_side_data(HEVCContext *s)
 
         for (i = 0; i < 3; i++) {
             const int j = mapping[i];
-            metadata->display_primaries[i][0].num = s->sei.mastering_display.display_primaries[j][0];
+            metadata->display_primaries[i][0].num = sei->mastering_display.display_primaries[j][0];
             metadata->display_primaries[i][0].den = chroma_den;
-            metadata->display_primaries[i][1].num = s->sei.mastering_display.display_primaries[j][1];
+            metadata->display_primaries[i][1].num = sei->mastering_display.display_primaries[j][1];
             metadata->display_primaries[i][1].den = chroma_den;
         }
-        metadata->white_point[0].num = s->sei.mastering_display.white_point[0];
+        metadata->white_point[0].num = sei->mastering_display.white_point[0];
         metadata->white_point[0].den = chroma_den;
-        metadata->white_point[1].num = s->sei.mastering_display.white_point[1];
+        metadata->white_point[1].num = sei->mastering_display.white_point[1];
         metadata->white_point[1].den = chroma_den;
 
-        metadata->max_luminance.num = s->sei.mastering_display.max_luminance;
+        metadata->max_luminance.num = sei->mastering_display.max_luminance;
         metadata->max_luminance.den = luma_den;
-        metadata->min_luminance.num = s->sei.mastering_display.min_luminance;
+        metadata->min_luminance.num = sei->mastering_display.min_luminance;
         metadata->min_luminance.den = luma_den;
         metadata->has_luminance = 1;
         metadata->has_primaries = 1;
 
-        av_log(s->avctx, AV_LOG_DEBUG, "Mastering Display Metadata:\n");
-        av_log(s->avctx, AV_LOG_DEBUG,
+        av_log(logctx, AV_LOG_DEBUG, "Mastering Display Metadata:\n");
+        av_log(logctx, AV_LOG_DEBUG,
                "r(%5.4f,%5.4f) g(%5.4f,%5.4f) b(%5.4f %5.4f) wp(%5.4f, %5.4f)\n",
                av_q2d(metadata->display_primaries[0][0]),
                av_q2d(metadata->display_primaries[0][1]),
@@ -2838,31 +2837,31 @@ static int set_side_data(HEVCContext *s)
                av_q2d(metadata->display_primaries[2][0]),
                av_q2d(metadata->display_primaries[2][1]),
                av_q2d(metadata->white_point[0]), av_q2d(metadata->white_point[1]));
-        av_log(s->avctx, AV_LOG_DEBUG,
+        av_log(logctx, AV_LOG_DEBUG,
                "min_luminance=%f, max_luminance=%f\n",
                av_q2d(metadata->min_luminance), av_q2d(metadata->max_luminance));
     }
     // Decrement the mastering display flag when IRAP frame has no_rasl_output_flag=1
     // so the side data persists for the entire coded video sequence.
-    if (s->sei.content_light.present > 0 &&
+    if (s && sei->content_light.present > 0 &&
         IS_IRAP(s) && s->no_rasl_output_flag) {
-        s->sei.content_light.present--;
+        sei->content_light.present--;
     }
-    if (s->sei.content_light.present) {
+    if (sei->content_light.present) {
         AVContentLightMetadata *metadata =
             av_content_light_metadata_create_side_data(out);
         if (!metadata)
             return AVERROR(ENOMEM);
-        metadata->MaxCLL  = s->sei.content_light.max_content_light_level;
-        metadata->MaxFALL = s->sei.content_light.max_pic_average_light_level;
+        metadata->MaxCLL  = sei->content_light.max_content_light_level;
+        metadata->MaxFALL = sei->content_light.max_pic_average_light_level;
 
-        av_log(s->avctx, AV_LOG_DEBUG, "Content Light Level Metadata:\n");
-        av_log(s->avctx, AV_LOG_DEBUG, "MaxCLL=%d, MaxFALL=%d\n",
+        av_log(logctx, AV_LOG_DEBUG, "Content Light Level Metadata:\n");
+        av_log(logctx, AV_LOG_DEBUG, "MaxCLL=%d, MaxFALL=%d\n",
                metadata->MaxCLL, metadata->MaxFALL);
     }
 
-    if (s->sei.a53_caption.buf_ref) {
-        HEVCSEIA53Caption *a53 = &s->sei.a53_caption;
+    if (sei->a53_caption.buf_ref) {
+        HEVCSEIA53Caption *a53 = &sei->a53_caption;
 
         AVFrameSideData *sd = av_frame_new_side_data_from_buf(out, AV_FRAME_DATA_A53_CC, a53->buf_ref);
         if (!sd)
@@ -2870,8 +2869,8 @@ static int set_side_data(HEVCContext *s)
         a53->buf_ref = NULL;
     }
 
-    for (int i = 0; i < s->sei.unregistered.nb_buf_ref; i++) {
-        HEVCSEIUnregistered *unreg = &s->sei.unregistered;
+    for (int i = 0; i < sei->unregistered.nb_buf_ref; i++) {
+        HEVCSEIUnregistered *unreg = &sei->unregistered;
 
         if (unreg->buf_ref[i]) {
             AVFrameSideData *sd = av_frame_new_side_data_from_buf(out,
@@ -2882,9 +2881,9 @@ static int set_side_data(HEVCContext *s)
             unreg->buf_ref[i] = NULL;
         }
     }
-    s->sei.unregistered.nb_buf_ref = 0;
+    sei->unregistered.nb_buf_ref = 0;
 
-    if (s->sei.timecode.present) {
+    if (s && sei->timecode.present) {
         uint32_t *tc_sd;
         char tcbuf[AV_TIMECODE_STR_SIZE];
         AVFrameSideData *tcside = av_frame_new_side_data(out, AV_FRAME_DATA_S12M_TIMECODE,
@@ -2893,25 +2892,25 @@ static int set_side_data(HEVCContext *s)
             return AVERROR(ENOMEM);
 
         tc_sd = (uint32_t*)tcside->data;
-        tc_sd[0] = s->sei.timecode.num_clock_ts;
+        tc_sd[0] = sei->timecode.num_clock_ts;
 
         for (int i = 0; i < tc_sd[0]; i++) {
-            int drop = s->sei.timecode.cnt_dropped_flag[i];
-            int   hh = s->sei.timecode.hours_value[i];
-            int   mm = s->sei.timecode.minutes_value[i];
-            int   ss = s->sei.timecode.seconds_value[i];
-            int   ff = s->sei.timecode.n_frames[i];
+            int drop = sei->timecode.cnt_dropped_flag[i];
+            int   hh = sei->timecode.hours_value[i];
+            int   mm = sei->timecode.minutes_value[i];
+            int   ss = sei->timecode.seconds_value[i];
+            int   ff = sei->timecode.n_frames[i];
 
             tc_sd[i + 1] = av_timecode_get_smpte(s->avctx->framerate, drop, hh, mm, ss, ff);
             av_timecode_make_smpte_tc_string2(tcbuf, s->avctx->framerate, tc_sd[i + 1], 0, 0);
             av_dict_set(&out->metadata, "timecode", tcbuf, 0);
         }
 
-        s->sei.timecode.num_clock_ts = 0;
+        sei->timecode.num_clock_ts = 0;
     }
 
-    if (s->sei.film_grain_characteristics.present) {
-        HEVCSEIFilmGrainCharacteristics *fgc = &s->sei.film_grain_characteristics;
+    if (s && sei->film_grain_characteristics.present) {
+        HEVCSEIFilmGrainCharacteristics *fgc = &sei->film_grain_characteristics;
         AVFilmGrainParams *fgp = av_film_grain_params_create_side_data(out);
         if (!fgp)
             return AVERROR(ENOMEM);
@@ -2965,8 +2964,8 @@ static int set_side_data(HEVCContext *s)
         fgc->present = fgc->persistence_flag;
     }
 
-    if (s->sei.dynamic_hdr_plus.info) {
-        AVBufferRef *info_ref = av_buffer_ref(s->sei.dynamic_hdr_plus.info);
+    if (sei->dynamic_hdr_plus.info) {
+        AVBufferRef *info_ref = av_buffer_ref(sei->dynamic_hdr_plus.info);
         if (!info_ref)
             return AVERROR(ENOMEM);
 
@@ -2976,7 +2975,7 @@ static int set_side_data(HEVCContext *s)
         }
     }
 
-    if (s->rpu_buf) {
+    if (s && s->rpu_buf) {
         AVFrameSideData *rpu = av_frame_new_side_data_from_buf(out, AV_FRAME_DATA_DOVI_RPU_BUFFER, s->rpu_buf);
         if (!rpu)
             return AVERROR(ENOMEM);
@@ -2984,10 +2983,10 @@ static int set_side_data(HEVCContext *s)
         s->rpu_buf = NULL;
     }
 
-    if ((ret = ff_dovi_attach_side_data(&s->dovi_ctx, out)) < 0)
+    if (s && (ret = ff_dovi_attach_side_data(&s->dovi_ctx, out)) < 0)
         return ret;
 
-    if (s->sei.dynamic_hdr_vivid.info) {
+    if (s && s->sei.dynamic_hdr_vivid.info) {
         AVBufferRef *info_ref = av_buffer_ref(s->sei.dynamic_hdr_vivid.info);
         if (!info_ref)
             return AVERROR(ENOMEM);
@@ -3046,7 +3045,7 @@ static int hevc_frame_start(HEVCContext *s)
             goto fail;
     }
 
-    ret = set_side_data(s);
+    ret = ff_set_side_data(s->avctx, &s->sei, s, s->ref->frame);
     if (ret < 0)
         goto fail;
 

@@ -39,6 +39,7 @@
 #include "formats.h"
 #include "internal.h"
 #include "video.h"
+#include "libavcodec/avcodec.h"
 
 typedef struct BufferSourceContext {
     const AVClass    *class;
@@ -62,6 +63,9 @@ typedef struct BufferSourceContext {
     int channels;
     char    *channel_layout_str;
     AVChannelLayout ch_layout;
+
+    /* subtitle only */
+    enum AVSubtitleType subtitle_type;
 
     int eof;
 } BufferSourceContext;
@@ -142,6 +146,13 @@ FF_ENABLE_DEPRECATION_WARNINGS
             if (ret < 0)
                 return ret;
         }
+        break;
+    case AVMEDIA_TYPE_SUBTITLE:
+        s->subtitle_type = param->format;
+        if (param->width > 0)
+            s->w = param->width;
+        if (param->height > 0)
+            s->h = param->height;
         break;
     default:
         return AVERROR_BUG;
@@ -224,6 +235,8 @@ FF_ENABLE_DEPRECATION_WARNINGS
             CHECK_AUDIO_PARAM_CHANGE(ctx, s, frame->sample_rate, frame->ch_layout,
                                      frame->format, frame->pts);
             break;
+        case AVMEDIA_TYPE_SUBTITLE:
+            break;
         default:
             return AVERROR(EINVAL);
         }
@@ -296,6 +309,7 @@ unsigned av_buffersrc_get_nb_failed_requests(AVFilterContext *buffer_src)
 #define OFFSET(x) offsetof(BufferSourceContext, x)
 #define A AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
 #define V AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
+#define S AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_SUBTITLE_PARAM
 
 static const AVOption buffer_options[] = {
     { "width",         NULL,                     OFFSET(w),                AV_OPT_TYPE_INT,      { .i64 = 0 }, 0, INT_MAX, V },
@@ -324,6 +338,16 @@ static const AVOption abuffer_options[] = {
 };
 
 AVFILTER_DEFINE_CLASS(abuffer);
+
+static const AVOption sbuffer_options[] = {
+    { "time_base",     NULL, OFFSET(time_base),            AV_OPT_TYPE_RATIONAL, { .dbl = 0 }, 0, INT_MAX, S },
+    { "subtitle_type", NULL, OFFSET(subtitle_type),        AV_OPT_TYPE_INT,      { .i64 = 0 }, 0, INT_MAX, S },
+    { "width",         NULL, OFFSET(w),                    AV_OPT_TYPE_INT,      { .i64 = 0 }, 0, INT_MAX, V },
+    { "height",        NULL, OFFSET(h),                    AV_OPT_TYPE_INT,      { .i64 = 0 }, 0, INT_MAX, V },
+    { NULL },
+};
+
+AVFILTER_DEFINE_CLASS(sbuffer);
 
 static av_cold int init_audio(AVFilterContext *ctx)
 {
@@ -393,6 +417,21 @@ FF_ENABLE_DEPRECATION_WARNINGS
     return ret;
 }
 
+static av_cold int init_subtitle(AVFilterContext *ctx)
+{
+    BufferSourceContext *c = ctx->priv;
+
+    if (c->subtitle_type == AV_SUBTITLE_FMT_BITMAP)
+        av_log(ctx, AV_LOG_VERBOSE, "graphical subtitles - w:%d h:%d tb:%d/%d\n",
+               c->w, c->h, c->time_base.num, c->time_base.den);
+    else
+        av_log(ctx, AV_LOG_VERBOSE, "text subtitles -  w:%d h:%d tb:%d/%d\n",
+               c->w, c->h, c->time_base.num, c->time_base.den);
+
+    return 0;
+}
+
+
 static av_cold void uninit(AVFilterContext *ctx)
 {
     BufferSourceContext *s = ctx->priv;
@@ -426,6 +465,11 @@ static int query_formats(AVFilterContext *ctx)
         if ((ret = ff_set_common_channel_layouts(ctx, channel_layouts)) < 0)
             return ret;
         break;
+    case AVMEDIA_TYPE_SUBTITLE:
+        if ((ret = ff_add_format         (&formats, c->subtitle_type)) < 0 ||
+            (ret = ff_set_common_formats (ctx     , formats   )) < 0)
+            return ret;
+        break;
     default:
         return AVERROR(EINVAL);
     }
@@ -455,6 +499,11 @@ static int config_props(AVFilterLink *link)
             if (ret < 0)
                 return ret;
         }
+        break;
+    case AVMEDIA_TYPE_SUBTITLE:
+        link->format = c->subtitle_type;
+        link->w = c->w;
+        link->h = c->h;
         break;
     default:
         return AVERROR(EINVAL);
@@ -519,4 +568,27 @@ const AVFilter ff_asrc_abuffer = {
     FILTER_OUTPUTS(avfilter_asrc_abuffer_outputs),
     FILTER_QUERY_FUNC(query_formats),
     .priv_class = &abuffer_class,
+};
+
+static const AVFilterPad avfilter_ssrc_sbuffer_outputs[] = {
+    {
+        .name          = "default",
+        .type          = AVMEDIA_TYPE_SUBTITLE,
+        .request_frame = request_frame,
+        .config_props  = config_props,
+    },
+};
+
+const AVFilter ff_ssrc_sbuffer = {
+    .name          = "sbuffer",
+    .description   = NULL_IF_CONFIG_SMALL("Buffer subtitle frames, and make them accessible to the filterchain."),
+    .priv_size     = sizeof(BufferSourceContext),
+
+    .init      = init_subtitle,
+    .uninit    = uninit,
+
+    .inputs    = NULL,
+    FILTER_OUTPUTS(avfilter_ssrc_sbuffer_outputs),
+    FILTER_QUERY_FUNC(query_formats),
+    .priv_class = &sbuffer_class,
 };

@@ -571,8 +571,10 @@ extern const AVFilter ff_avsrc_movie;
  * being the same while having different 'types'). */
 extern  const AVFilter ff_asrc_abuffer;
 extern  const AVFilter ff_vsrc_buffer;
+extern  const AVFilter ff_ssrc_sbuffer;
 extern  const AVFilter ff_asink_abuffer;
 extern  const AVFilter ff_vsink_buffer;
+extern  const AVFilter ff_ssink_sbuffer;
 extern const AVFilter ff_af_afifo;
 extern const AVFilter ff_vf_fifo;
 

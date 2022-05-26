@@ -231,13 +231,24 @@ static int process_frame(FFFrameSync *fs)
 {
     AVFilterContext  *ctx = fs->parent;
     QSVOverlayContext  *s = fs->opaque;
+    AVFrame       *frame0 = NULL;
     AVFrame        *frame = NULL;
-    int               ret = 0, i;
+    int               ret = 0;
 
-    for (i = 0; i < ctx->nb_inputs; i++) {
+    for (unsigned i = 0; i < ctx->nb_inputs; i++) {
         ret = ff_framesync_get_frame(fs, i, &frame, 0);
-        if (ret == 0)
-            ret = ff_qsvvpp_filter_frame(s->qsv, ctx->inputs[i], frame);
+
+        if (ret == 0) {
+            if (i == 0)
+                frame0 = frame;
+            else {
+                av_frame_remove_all_side_data(frame);
+                ret = av_frame_copy_side_data(frame, frame0, 0);
+            }
+
+            ret = ret < 0 ? ret : ff_qsvvpp_filter_frame(s->qsv, ctx->inputs[i], frame);
+        }
+
         if (ret < 0 && ret != AVERROR(EAGAIN))
             break;
     }

@@ -843,6 +843,12 @@ int ff_qsvvpp_filter_frame(QSVVPPContext *s, AVFilterLink *inlink, AVFrame *picr
                 return AVERROR(EAGAIN);
             break;
         }
+
+        av_frame_remove_all_side_data(out_frame->frame);
+        ret = av_frame_copy_side_data(out_frame->frame, in_frame->frame, 0);
+        if (ret < 0)
+            return ret;
+
         out_frame->frame->pts = av_rescale_q(out_frame->surface.Data.TimeStamp,
                                              default_tb, outlink->time_base);
 

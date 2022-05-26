@@ -850,6 +850,30 @@ int av_frame_copy(AVFrame *dst, const AVFrame *src);
  */
 int av_frame_copy_props(AVFrame *dst, const AVFrame *src);
 
+
+/**
+ * Copy side data, rather than creating new references.
+ */
+#define AV_FRAME_TRANSFER_SD_COPY      (1 << 0)
+/**
+ * Filter out side data that does not match dst properties.
+ */
+#define AV_FRAME_TRANSFER_SD_FILTER    (1 << 1)
+
+/**
+ * Copy all side-data from src to dst.
+ *
+ * @param dst a frame to which the side data should be copied.
+ * @param src a frame from which to copy the side data.
+ * @param flags a combination of AV_FRAME_TRANSFER_SD_*
+ *
+ * @return >= 0 on success, a negative AVERROR on error.
+ *
+ * @note This function will create new references to side data buffers in src,
+ * unless the AV_FRAME_TRANSFER_SD_COPY flag is passed.
+ */
+int av_frame_copy_side_data(AVFrame* dst, const AVFrame* src, int flags);
+
 /**
  * Get the buffer reference a given data plane is stored in.
  *
@@ -900,6 +924,14 @@ AVFrameSideData *av_frame_get_side_data(const AVFrame *frame,
  * Remove and free all side data instances of the given type.
  */
 void av_frame_remove_side_data(AVFrame *frame, enum AVFrameSideDataType type);
+
+/**
+ * Remove and free all side data instances.
+ *
+ * @param frame from which to remove all side data.
+ */
+void av_frame_remove_all_side_data(AVFrame *frame);
+
 
 
 /**

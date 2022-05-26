@@ -74,6 +74,7 @@ typedef struct AVBufferSrcParameters {
     /**
      * video: the pixel format, value corresponds to enum AVPixelFormat
      * audio: the sample format, value corresponds to enum AVSampleFormat
+     * subtitles: the subtitle format, value corresponds to enum AVSubtitleType
      */
     int format;
     /**

@@ -21,6 +21,9 @@
 #ifndef AVUTIL_SUBFMT_H
 #define AVUTIL_SUBFMT_H
 
+#include <stdint.h>
+
+#include "buffer.h"
 #include "version.h"
 
 enum AVSubtitleType {
@@ -64,5 +67,49 @@ enum AVSubtitleType {
 
     AV_SUBTITLE_FMT_NB,         ///< number of subtitle formats, DO NOT USE THIS if you want to link with shared libav* because the number of formats might differ between versions.
 };
+
+typedef struct AVSubtitleArea {
+#define AV_NUM_BUFFER_POINTERS 1
+
+    enum AVSubtitleType type;
+    int flags;
+
+    int x;         ///< top left corner  of area.
+    int y;         ///< top left corner  of area.
+    int w;         ///< width            of area.
+    int h;         ///< height           of area.
+    int nb_colors; ///< number of colors in bitmap palette (@ref pal).
+
+    /**
+     * Buffers and line sizes for the bitmap of this subtitle.
+     *
+     * @{
+     */
+    AVBufferRef *buf[AV_NUM_BUFFER_POINTERS];
+    int linesize[AV_NUM_BUFFER_POINTERS];
+    /**
+     * @}
+     */
+
+    uint32_t pal[256]; ///< RGBA palette for the bitmap.
+
+    char *text;        ///< 0-terminated plain UTF-8 text
+    char *ass;         ///< 0-terminated ASS/SSA compatible event line.
+
+} AVSubtitleArea;
+
+/**
+ * Return the name of sub_fmt, or NULL if sub_fmt is not
+ * recognized.
+ */
+const char *av_get_subtitle_fmt_name(enum AVSubtitleType sub_fmt);
+
+/**
+ * Return a subtitle format corresponding to name, or AV_SUBTITLE_FMT_NONE
+ * on error.
+ *
+ * @param name Subtitle format name.
+ */
+enum AVSubtitleType av_get_subtitle_fmt(const char *name);
 
 #endif /* AVUTIL_SUBFMT_H */

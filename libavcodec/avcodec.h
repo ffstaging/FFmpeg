@@ -1700,7 +1700,7 @@ typedef struct AVCodecContext {
 
     /**
      * Header containing style information for text subtitles.
-     * For SUBTITLE_ASS subtitle type, it should contain the whole ASS
+     * For AV_SUBTITLE_FMT_ASS subtitle type, it should contain the whole ASS
      * [Script Info] and [V4+ Styles] section, plus the [Events] line and
      * the Format line following. It shouldn't include any Dialogue line.
      * - encoding: Set/allocated/freed by user (before avcodec_open2())
@@ -2058,6 +2058,8 @@ typedef struct AVCodecContext {
      *             The decoder can then override during decoding as needed.
      */
     AVChannelLayout ch_layout;
+
+    enum AVSubtitleType subtitle_type;
 } AVCodecContext;
 
 /**
@@ -2434,7 +2436,10 @@ int avcodec_close(AVCodecContext *avctx);
  * Free all allocated data in the given subtitle struct.
  *
  * @param sub AVSubtitle to free.
+ *
+ * @deprecated Use the regular frame based encode and decode APIs instead.
  */
+attribute_deprecated
 void avsubtitle_free(AVSubtitle *sub);
 
 /**
@@ -2533,7 +2538,10 @@ enum AVChromaLocation avcodec_chroma_pos_to_enum(int xpos, int ypos);
  *                 must be freed with avsubtitle_free if *got_sub_ptr is set.
  * @param[in,out] got_sub_ptr Zero if no subtitle could be decompressed, otherwise, it is nonzero.
  * @param[in] avpkt The input AVPacket containing the input buffer.
+ *
+ * @deprecated Use the new decode API (avcodec_send_packet, avcodec_receive_frame) instead.
  */
+attribute_deprecated
 int avcodec_decode_subtitle2(AVCodecContext *avctx, AVSubtitle *sub,
                             int *got_sub_ptr,
                             AVPacket *avpkt);

@@ -827,6 +827,190 @@ FF_ENABLE_DEPRECATION_WARNINGS
     return FFMAX(0, duration);
 }
 
+static int subtitle_area2rect(AVSubtitleRect *dst, const AVSubtitleArea *src)
+{
+    dst->x         =  src->x;
+    dst->y         =  src->y;
+    dst->w         =  src->w;
+    dst->h         =  src->h;
+    dst->nb_colors =  src->nb_colors;
+    dst->type      =  src->type;
+    dst->flags     =  src->flags;
+
+    switch (dst->type) {
+    case AV_SUBTITLE_FMT_BITMAP:
+
+        if (src->h > 0 && src->w > 0 && src->buf[0]) {
+            uint32_t *pal;
+            AVBufferRef *buf = src->buf[0];
+            dst->data[0] = av_mallocz(buf->size);
+            memcpy(dst->data[0], buf->data, buf->size);
+            dst->linesize[0] = src->linesize[0];
+
+            dst->data[1] = av_mallocz(256 * 4);
+            pal = (uint32_t *)dst->data[1];
+
+            for (unsigned i = 0; i < 256; i++) {
+                pal[i] = src->pal[i];
+            }
+        }
+
+        break;
+    case AV_SUBTITLE_FMT_TEXT:
+
+        if (src->text)
+            dst->text = av_strdup(src->text);
+        else
+            dst->text = av_strdup("");
+
+        if (!dst->text)
+            return AVERROR(ENOMEM);
+
+        break;
+    case AV_SUBTITLE_FMT_ASS:
+
+        if (src->ass)
+            dst->ass = av_strdup(src->ass);
+        else
+            dst->ass = av_strdup("");
+
+        if (!dst->ass)
+            return AVERROR(ENOMEM);
+
+        break;
+    default:
+
+        av_log(NULL, AV_LOG_ERROR, "Subtitle rect has invalid format: %d", dst->type);
+        return AVERROR(EINVAL);
+    }
+
+    return 0;
+}
+
+static int subtitle_rect2area(AVSubtitleArea *dst, const AVSubtitleRect *src)
+{
+    dst->x         =  src->x;
+    dst->y         =  src->y;
+    dst->w         =  src->w;
+    dst->h         =  src->h;
+    dst->nb_colors =  src->nb_colors;
+    dst->type      =  src->type;
+    dst->flags     =  src->flags;
+
+    switch (dst->type) {
+    case AV_SUBTITLE_FMT_BITMAP:
+
+        if (src->h > 0 && src->w > 0 && src->data[0]) {
+            AVBufferRef *buf = av_buffer_allocz(src->h * src->linesize[0]);
+            memcpy(buf->data, src->data[0], buf->size);
+
+            dst->buf[0] = buf;
+            dst->linesize[0] = src->linesize[0];
+        }
+
+        if (src->data[1]) {
+            uint32_t *pal = (uint32_t *)src->data[1];
+
+            for (unsigned i = 0; i < 256; i++) {
+                dst->pal[i] = pal[i];
+            }
+        }
+
+        break;
+    case AV_SUBTITLE_FMT_TEXT:
+
+        if (src->text) {
+            dst->text = av_strdup(src->text);
+            if (!dst->text)
+                return AVERROR(ENOMEM);
+        }
+
+        break;
+    case AV_SUBTITLE_FMT_ASS:
+
+        if (src->ass) {
+            dst->ass = av_strdup(src->ass);
+            if (!dst->ass)
+                return AVERROR(ENOMEM);
+        }
+
+        break;
+    default:
+
+        av_log(NULL, AV_LOG_ERROR, "Subtitle area has invalid format: %d", dst->type);
+        return AVERROR(EINVAL);
+    }
+
+    return 0;
+}
+
+/**
+ * Copies subtitle data from AVSubtitle (deprecated) to AVFrame
+ *
+ * @note This is a compatibility method for conversion to the legacy API
+ */
+int ff_frame_put_subtitle(AVFrame *frame, const AVSubtitle *sub)
+{
+    frame->format = sub->format;
+    frame->subtitle_timing.start_pts = sub->pts;
+    frame->subtitle_timing.start_pts += av_rescale_q(sub->start_display_time, (AVRational){ 1, 1000 }, AV_TIME_BASE_Q);
+    frame->subtitle_timing.duration = av_rescale_q(sub->end_display_time - sub->start_display_time, (AVRational){ 1, 1000 }, AV_TIME_BASE_Q);
+
+    if (sub->num_rects) {
+        frame->subtitle_areas = av_malloc_array(sub->num_rects, sizeof(AVSubtitleArea*));
+        if (!frame->subtitle_areas)
+            return AVERROR(ENOMEM);
+
+        for (unsigned i = 0; i < sub->num_rects; i++) {
+            int ret;
+            frame->subtitle_areas[i] = av_mallocz(sizeof(AVSubtitleArea));
+            if (!frame->subtitle_areas[i])
+                return AVERROR(ENOMEM);
+            ret = subtitle_rect2area(frame->subtitle_areas[i], sub->rects[i]);
+            if (ret < 0) {
+                frame->num_subtitle_areas = i;
+                return ret;
+            }
+        }
+    }
+
+    frame->num_subtitle_areas = sub->num_rects;
+    return 0;
+}
+
+/**
+ * Copies subtitle data from AVFrame to AVSubtitle (deprecated)
+ *
+ * @note This is a compatibility method for conversion to the legacy API
+ */
+int ff_frame_get_subtitle(AVSubtitle *sub, AVFrame *frame)
+{
+    const int64_t duration_ms = av_rescale_q(frame->subtitle_timing.duration, AV_TIME_BASE_Q, (AVRational){ 1, 1000 });
+
+    sub->start_display_time = 0;
+    sub->end_display_time = (int32_t)duration_ms;
+    sub->pts = frame->subtitle_timing.start_pts;
+
+    if (frame->num_subtitle_areas) {
+        sub->rects = av_malloc_array(frame->num_subtitle_areas, sizeof(AVSubtitleRect*));
+        if (!sub->rects)
+            return AVERROR(ENOMEM);
+
+        for (unsigned i = 0; i < frame->num_subtitle_areas; i++) {
+            int ret;
+            sub->rects[i] = av_mallocz(sizeof(AVSubtitleRect));
+            ret = subtitle_area2rect(sub->rects[i], frame->subtitle_areas[i]);
+            if (ret < 0) {
+                sub->num_rects = i;
+                return ret;
+            }
+        }
+    }
+
+    sub->num_rects = frame->num_subtitle_areas;
+    return 0;
+}
+
 int av_get_audio_frame_duration2(AVCodecParameters *par, int frame_bytes)
 {
    int channels = par->ch_layout.nb_channels;

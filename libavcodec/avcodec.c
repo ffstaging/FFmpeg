@@ -358,6 +358,14 @@ FF_DISABLE_DEPRECATION_WARNINGS
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 
+        // Set the subtitle type from the codec descriptor in case the decoder hasn't done itself
+        if (avctx->codec_type == AVMEDIA_TYPE_SUBTITLE && avctx->subtitle_type == AV_SUBTITLE_FMT_UNKNOWN) {
+            if(avctx->codec_descriptor->props & AV_CODEC_PROP_BITMAP_SUB)
+                avctx->subtitle_type = AV_SUBTITLE_FMT_BITMAP;
+            if(avctx->codec_descriptor->props & AV_CODEC_PROP_TEXT_SUB)
+                 avctx->subtitle_type = AV_SUBTITLE_FMT_ASS;
+        }
+
 #if FF_API_AVCTX_TIMEBASE
         if (avctx->framerate.num > 0 && avctx->framerate.den > 0)
             avctx->time_base = av_inv_q(av_mul_q(avctx->framerate, (AVRational){avctx->ticks_per_frame, 1}));

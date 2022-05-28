@@ -583,6 +583,7 @@ OBJS-$(CONFIG_SHOW_SPEAKER_FILTER)           += sf_textmod.o
 OBJS-$(CONFIG_TEXTMOD_FILTER)                += sf_textmod.o
 OBJS-$(CONFIG_SPLITCC_FILTER)                += sf_splitcc.o
 OBJS-$(CONFIG_STRIPSTYLES_FILTER)            += sf_stripstyles.o
+OBJS-$(CONFIG_SUBSCALE_FILTER)               += sf_subscale.o
 
 # multimedia filters
 OBJS-$(CONFIG_ABITSCOPE_FILTER)              += avf_abitscope.o

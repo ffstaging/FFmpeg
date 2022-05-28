@@ -27469,6 +27469,170 @@ Set the rendering margin in pixels.
 For rendering, alway use the latest event only, which is covering the given point in time.
 @end table
 
+@section subscale
+
+Provides high-quality scaling and rearranging functionality for graphical subtitles.
+
+The subscale filter provides multiple approaches for manipulating
+the size and position of graphical subtitle rectangles wich can
+be combined or used separately.
+Scaling is performed by converting the palettized subtitle bitmaps
+to RGBA and re-quantization to palette colors afterwards via elbg algorithm.
+
+The two major operations are 'scale' and 're-arrange' with the
+latter being separated as 'arrange_h' and 'arrange_v'.
+
+
+Inputs:
+- 0: Subtitles [bitmap]
+
+Outputs:
+- 0: Subtitles [bitmap]
+
+It accepts the following parameters:
+
+@table @option
+
+@item w, width
+Set the width of the output.
+Width and height in case of graphical subtitles are just indicating
+a virtual size for which the output (consisting of 0-n bitmap rectangles)
+is intended to be displayed on.
+
+@item h, height
+Set the height of the output.
+
+@item margin_h
+Sets a horizontal margin to be preserverved when using any
+of the arrange modes.
+
+@item margin_v
+Sets a vertical margin to be preserverved when using any
+of the arrange modes.
+
+@item force_original_aspect_ratio
+Enable decreasing or increasing output video width or height if necessary to
+keep the original aspect ratio. Possible values:
+
+@table @samp
+@item disable
+Scale the video as specified and disable this feature.
+
+@item decrease
+The output video dimensions will automatically be decreased if needed.
+
+@item increase
+The output video dimensions will automatically be increased if needed.
+
+@end table
+
+
+@item scale_mode
+Specifies how subtitle bitmaps should be scaled.
+The scale factor is determined by the the factor between input
+and output size.
+
+@table @samp
+@item none
+Do not apply any common scaling.
+
+@item uniform
+Uniformly scale all subtitle bitmaps including their positions.
+
+@item uniform_no_reposition
+Uniformly scale all subtitle bitmaps without changing positions.
+
+@end table
+
+
+@item arrange_h
+Specifies how subtitle bitmaps should be arranged horizontally.
+
+@item arrange_v
+Specifies how subtitle bitmaps should be arranged vertically.
+
+
+@table @samp
+@item none
+Do not rearrange subtitle bitmaps.
+
+@item margin_no_scale
+Move subtitle bitmaps to be positioned inside the specified
+margin (margin_h or margin_v) when possible and without scaling.
+
+@item margin_and_scale
+Move subtitle bitmaps to be positioned inside the specified
+margin (margin_h or margin_v) and scale in case it doesn't fit.
+
+@item snapalign_no_scale
+Categorize subtitle bitmap positions as one of left/center/right
+or top/bottom/middle based on original positioning and apply
+these alignments for the target positioning.
+No scaling will be applied.
+
+@item snapalign_and_scale
+Categorize subtitle bitmap positions as one of left/center/right
+or top/bottom/middle based on original positioning and apply
+these alignments for the target positioning.
+Bitmaps that do not fit inside the margins borders are
+scaled to fit.
+@end table
+
+@item eval
+Set evaluation mode for the expressions (@option{width}, @option{height}).
+
+It accepts the following values:
+@table @samp
+@item init
+Evaluate expressions only once during the filter initialization.
+
+@item frame
+Evaluate expressions for each incoming frame. This is way slower than the
+@samp{init} mode since it requires all the scalers to be re-computed, but it
+allows advanced dynamic expressions.
+@end table
+
+Default value is @samp{init}.
+
+
+@item num_colors
+Set the number of palette colors for output images.
+Choose the maximum (256) when further processing is done (e.g.
+overlaying on a video).
+When subtitles will be encoded as bitmap subtitles (e.g. dvbsub),
+a smaller number of palette colors (e.g. 4-16) might need to be used, depending
+on the target format and codec.
+
+@item bitmap_width_align
+@item bitmap_height_align
+Make sure that subtitle bitmap sizes are a multiple of this
+value. Default is 2.
+
+@end table
+
+@subsection Examples
+
+@itemize
+@item
+Uniformly scale down video and bitmap subtitles and encode
+subtitles as dvbsub.
+@example
+ffmpeg -y -loglevel verbose -ss 32 -i "https://streams.videolan.org/samples/sub/largeres_vobsub.mkv" -filter_complex "[0:0]scale=480x270[vid1];[0:10]subscale=w=480:h=270:num_colors=16[sub1]" -map [vid1] -map [sub1] -c:s dvbsub -c:v libx265 output.ts
+@end example
+@item
+Squeeze video vertically and arrange subtitle bitmaps
+inside the video area without scaling, then overlay
+subtitles onto the video.
+@example
+ffmpeg -y -loglevel verbose -ss 32 -i "https://streams.videolan.org/samples/sub/largeres_vobsub.mkv" -filter_complex "[0:0]scale=1920x400,setsar=1[vid1];[0:10]subscale=w=1920:h=400:scale_mode=none:margin_h=50:arrange_h=margin_no_scale:arrange_v=margin_no_scale:margin_v=50:num_colors=256[sub1];[vid1][sub1]overlaygraphicsubs" -c:v libx265 output.ts
+@end example
+@item
+Scale both, a video and its embedded VOB subs, then encode them as separate streams into an MKV.
+@example
+ffmpeg -y -y -loglevel verbose -i "https://streams.videolan.org/samples/sub/largeres_vobsub.mkv" -filter_complex "[0:0]scale=720x576[vid1];[0:7]subscale=w=720:h=576:num_colors=16[sub1]" -map [vid1] -map [sub1] -c:s dvdsub out.mkv
+@end example
+@end itemize
+
 @c man end SUBTITLE FILTERS
 
 @chapter Multimedia Filters

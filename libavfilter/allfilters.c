@@ -564,6 +564,7 @@ extern const AVFilter ff_sf_graphicsub2text;
 extern const AVFilter ff_sf_showspeaker;
 extern const AVFilter ff_sf_splitcc;
 extern const AVFilter ff_sf_stripstyles;
+extern const AVFilter ff_sf_subscale;
 extern const AVFilter ff_sf_textmod;
 extern const AVFilter ff_svf_graphicsub2video;
 extern const AVFilter ff_svf_textsub2video;

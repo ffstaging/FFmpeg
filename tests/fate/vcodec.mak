@@ -262,6 +262,7 @@ fate-vsynth%-mpeg2-422:          ENCOPTS = -b:v 1000k                   \
                                            -trellis 1                   \
                                            -flags +ildct+ilme           \
                                            -mpv_flags +qp_rd+mv0        \
+                                           -cpuflags -avx512            \
                                            -intra_vlc 1                 \
                                            -mbd rd                      \
                                            -pix_fmt yuv422p

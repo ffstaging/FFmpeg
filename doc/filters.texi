@@ -26887,6 +26887,145 @@ existing filters using @code{--disable-filters}.
 
 Below is a description of the currently available subtitle filters.
 
+
+@section censor
+
+Censor selected words in text subtitles.
+
+Inputs:
+@itemize
+@item 0: Subtitles[TEXT]
+@end itemize
+
+Outputs:
+@itemize
+@item 0: Subtitles[TEXT]
+@end itemize
+
+It accepts the following parameters:
+
+@table @option
+@item mode
+The censoring mode to apply.
+
+Supported censoring modes are:
+
+@table @var
+@item 0, keep_first_last
+Replace all characters with the 'censor_char' except the first and the last character of a word.
+For words with less than 4 characters, the last character will be replaced as well.
+For words with less than 3 characters, the first character will be replaced as well.
+@item 1, keep_first
+Replace all characters with the 'censor_char' except the first character of a word.
+For words with less than 3 characters, the first character will be replaced as well.
+@item 2, all
+Replace all characters with the 'censor_char'.
+@end table
+
+@item words
+A list of words to censor, separated by 'separator'.
+
+@item words_file
+Specify a file from which to load the contents for the 'words' parameter.
+
+@item censor_char
+Single character used as replacement for censoring.
+
+@item separator
+Delimiter character for words. Used with replace_words and remove_words- Must be a single character.
+The default is '.'.
+
+@end table
+
+@subsection Examples
+
+@itemize
+@item
+Censor a few given words with a pound character.
+@example
+ffmpeg -i "http://streams.videolan.org/samples/sub/SSA/subtitle_testing_complex.mkv" -filter_complex "[0:1]censor=words='diss,louder,hope,beam,word':censor_char='#'" -map 0 -y output.mkv
+@end example
+@end itemize
+
+
+@section textmod
+
+Modify subtitle text in a number of ways.
+
+Inputs:
+@itemize
+@item 0: Subtitles[TEXT]
+@end itemize
+
+Outputs:
+@itemize
+@item 0: Subtitles[TEXT]
+@end itemize
+
+It accepts the following parameters:
+
+@table @option
+@item mode
+The kind of text modification to apply
+
+Supported operation modes are:
+
+@table @var
+@item 0, leet
+Convert subtitle text to 'leet speak'. It's primarily useful for testing as the modification will be visible with almost all text lines.
+@item 1, to_upper
+Change all text to upper case. Might improve readability.
+@item 2, to_lower
+Change all text to lower case.
+@item 3, replace_chars
+Replace one or more characters. Requires the find and replace parameters to be specified.
+Both need to be equal in length.
+The first char in find is replaced by the first char in replace, same for all subsequent chars.
+@item 4, remove_chars
+Remove certain characters. Requires the find parameter to be specified.
+All chars in the find parameter string will be removed from all subtitle text.
+@item 5, replace_words
+Replace one or more words. Requires the find and replace parameters to be specified. Multiple words must be separated by the delimiter char specified vie the separator parameter (default: ',').
+The number of words in the find and replace parameters needs to be equal.
+The first word in find is replaced by the first word in replace, same for all subsequent words
+@item 6, remove_words
+Remove certain words. Requires the find parameter to be specified. Multiple words must be separated by the delimiter char specified vie the separator parameter (default: ',').
+All words in the find parameter string will be removed from all subtitle text.
+@end table
+
+@item find
+Required for replace_chars, remove_chars, replace_words and remove_words.
+
+@item find_file
+Specify a file from which to load the contents for the 'find' parameter.
+
+@item replace
+Required for replace_chars and replace_words.
+
+@item replace_file
+Specify a file from which to load the contents for the 'replace' parameter.
+
+@item separator
+Delimiter character for words. Used with replace_words and remove_words- Must be a single character.
+The default is '.'.
+
+@end table
+
+@subsection Examples
+
+@itemize
+@item
+Change all characters to upper case while keeping all styles and animations:
+@example
+ffmpeg -i "https://streams.videolan.org/ffmpeg/mkv_subtitles.mkv" -filter_complex "[0:s]textmod=mode=to_upper" -map 0 -y out.mkv
+@end example
+@item
+Remove a set of symbol characters for am improved and smoother visual apperance:
+@example
+ffmpeg -i "https://streams.videolan.org/ffmpeg/mkv_subtitles.mkv" -filter_complex "[0:s]textmod=mode=remove_chars:find='$&#@*§'" -map 0 -y out.mkv
+@end example
+@end itemize
+
 @section graphicsub2video
 
 Renders graphic subtitles as video frames.
@@ -27051,6 +27190,73 @@ For rendering, alway use the latest event only, which is covering the given poin
 Overlay ASS subtitles with animations:
 @example
 ffmpeg -i "http://streams.videolan.org/samples/sub/SSA/subtitle_testing_complex.mkv" -filter_complex "[0:v]overlaytextsubs" -map 0 -y out.mkv
+@end example
+@end itemize
+
+@section showspeaker
+
+Prepend speaker names to subtitle lines (when available).
+
+Subtitles in ASS/SSA format are often including the names of the persons
+or character for each subtitle line. The showspeaker filter adds those names
+to the actual subtitle text to make it visible on playback.
+
+Inputs:
+@itemize
+@item 0: Subtitles[TEXT]
+@end itemize
+
+Outputs:
+@itemize
+@item 0: Subtitles[TEXT]
+@end itemize
+
+It accepts the following parameters:
+
+@table @option
+@item format
+The format for prepending speaker names. Default is 'square_brackets'.
+
+Supported operation modes are:
+
+@table @var
+@item 0, square_brackets
+Enclose the speaker name in square brackets, followed by space ('[speaker] text').
+@item 1, round_brackets
+Enclose the speaker name in round brackets, followed by space ('(speaker) text').
+@item 2, colon
+Separate the speaker name with a colon and space ('speaker: text').
+@item 3, plain
+Separate the speaker name with a space only ('speaker text').
+@end table
+
+@item line_break
+Set thís parameter to insert a line break between speaker name and text instead of the space character.
+
+@item style
+Allows to set a specific style for the speaker name text.
+
+This can be either a named style that exists in the ass subtitle header script (e.g. 'Default') or an ass style override code.
+Example:  @{\\c&HDD0000&\\be1\\i1\\bord10@}
+This sets the color to blue, enables edge blurring, italic font and a border of size 10.
+
+The behavior is as follows:
+
+- When the style parameter is not provided, the filter will find the first position in the event string that is actual text.
+  The speaker name will be inserted at this position. This allows to have the speaker name shown in the same style like the
+  regular text, in case the string would start with a sequence of style codes.
+- When the style parameter is provided, everything will be prepended to the original text:
+  Style Code or Style name >> Speaker Name >> Style Reset Code >> Original Text
+
+@end table
+
+@subsection Examples
+
+@itemize
+@item
+Prepend speaker names with blue text, smooth edges and blend/overlay that onto the video.
+@example
+ffmpeg -i INPUT -filter_complex "showspeaker=format=colon:style='@{\\c&HDD0000&\\be1@}',[0:v]overlaytextsubs"
 @end example
 @end itemize
 

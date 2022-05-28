@@ -21,6 +21,7 @@
 #include "avcodec.h"
 #include "bytestream.h"
 #include "codec_internal.h"
+#include "encode.h"
 #include "internal.h"
 #include "libavutil/avassert.h"
 #include "libavutil/bprint.h"
@@ -115,15 +116,14 @@ static int color_distance(uint32_t a, uint32_t b)
  * Count colors used in a rectangle, quantizing alpha and grouping by
  * nearest global palette entry.
  */
-static void count_colors(AVCodecContext *avctx, unsigned hits[33],
-                         const AVSubtitleRect *r)
+static void count_colors(const AVCodecContext *avctx, unsigned hits[33],
+                         const AVSubtitleArea *r)
 {
     DVDSubtitleContext *dvdc = avctx->priv_data;
     unsigned count[256] = { 0 };
-    uint32_t *palette = (uint32_t *)r->data[1];
     uint32_t color;
     int x, y, i, j, match, d, best_d, av_uninit(best_j);
-    uint8_t *p = r->data[0];
+    uint8_t *p = r->buf[0]->data;
 
     for (y = 0; y < r->h; y++) {
         for (x = 0; x < r->w; x++)
@@ -133,7 +133,7 @@ static void count_colors(AVCodecContext *avctx, unsigned hits[33],
     for (i = 0; i < 256; i++) {
         if (!count[i]) /* avoid useless search */
             continue;
-        color = palette[i];
+        color = r->pal[i];
         /* 0: transparent, 1-16: semi-transparent, 17-33 opaque */
         match = color < 0x33000000 ? 0 : color < 0xCC000000 ? 1 : 17;
         if (match) {
@@ -233,13 +233,13 @@ static void build_color_map(AVCodecContext *avctx, int cmap[],
     }
 }
 
-static void copy_rectangle(AVSubtitleRect *dst, AVSubtitleRect *src, int cmap[])
+static void copy_rectangle(AVSubtitleArea*dst, AVSubtitleArea *src, int cmap[])
 {
     int x, y;
     uint8_t *p, *q;
 
-    p = src->data[0];
-    q = dst->data[0] + (src->x - dst->x) +
+    p = src->buf[0]->data;
+    q = dst->buf[0]->data + (src->x - dst->x) +
                             (src->y - dst->y) * dst->linesize[0];
     for (y = 0; y < src->h; y++) {
         for (x = 0; x < src->w; x++)
@@ -249,51 +249,57 @@ static void copy_rectangle(AVSubtitleRect *dst, AVSubtitleRect *src, int cmap[])
     }
 }
 
-static int encode_dvd_subtitles(AVCodecContext *avctx,
-                                uint8_t *outbuf, int outbuf_size,
-                                const AVSubtitle *h)
+static int encode_dvd_subtitles(AVCodecContext* avctx, AVPacket* avpkt,
+                                const AVFrame* frame, int* got_packet)
 {
     DVDSubtitleContext *dvdc = avctx->priv_data;
     uint8_t *q, *qq;
     int offset1, offset2;
-    int i, rects = h->num_rects, ret;
+    int ret = 0;
+    unsigned i, rects = frame->num_subtitle_areas;
     unsigned global_palette_hits[33] = { 0 };
     int cmap[256];
     int out_palette[4];
     int out_alpha[4];
-    AVSubtitleRect vrect;
-    uint8_t *vrect_data = NULL;
+    AVSubtitleArea vrect;
+    uint8_t* vrect_data = NULL, *outbuf;
     int x2, y2;
     int forced = 0;
+    int outbuf_size;
+    int64_t duration_ms;
 
-    if (rects == 0 || !h->rects)
+    if (rects == 0)
+        return 0;
+
+    if (!frame->subtitle_areas)
         return AVERROR(EINVAL);
+
     for (i = 0; i < rects; i++)
-        if (h->rects[i]->type != AV_SUBTITLE_FMT_BITMAP) {
+        if (frame->subtitle_areas[i]->type != AV_SUBTITLE_FMT_BITMAP) {
             av_log(avctx, AV_LOG_ERROR, "Bitmap subtitle required\n");
             return AVERROR(EINVAL);
         }
     /* Mark this subtitle forced if any of the rectangles is forced. */
     for (i = 0; i < rects; i++)
-        if ((h->rects[i]->flags & AV_SUBTITLE_FLAG_FORCED) != 0) {
+        if ((frame->subtitle_areas[i]->flags & AV_SUBTITLE_FLAG_FORCED) != 0) {
             forced = 1;
             break;
         }
 
-    vrect = *h->rects[0];
+    vrect = *frame->subtitle_areas[0];
 
     if (rects > 1) {
         /* DVD subtitles can have only one rectangle: build a virtual
            rectangle containing all actual rectangles.
            The data of the rectangles will be copied later, when the palette
            is decided, because the rectangles may have different palettes. */
-        int xmin = h->rects[0]->x, xmax = xmin + h->rects[0]->w;
-        int ymin = h->rects[0]->y, ymax = ymin + h->rects[0]->h;
+        int xmin = frame->subtitle_areas[0]->x, xmax = xmin + frame->subtitle_areas[0]->w;
+        int ymin = frame->subtitle_areas[0]->y, ymax = ymin + frame->subtitle_areas[0]->h;
         for (i = 1; i < rects; i++) {
-            xmin = FFMIN(xmin, h->rects[i]->x);
-            ymin = FFMIN(ymin, h->rects[i]->y);
-            xmax = FFMAX(xmax, h->rects[i]->x + h->rects[i]->w);
-            ymax = FFMAX(ymax, h->rects[i]->y + h->rects[i]->h);
+            xmin = FFMIN(xmin, frame->subtitle_areas[i]->x);
+            ymin = FFMIN(ymin, frame->subtitle_areas[i]->y);
+            xmax = FFMAX(xmax, frame->subtitle_areas[i]->x + frame->subtitle_areas[i]->w);
+            ymax = FFMAX(ymax, frame->subtitle_areas[i]->y + frame->subtitle_areas[i]->h);
         }
         vrect.x = xmin;
         vrect.y = ymin;
@@ -305,27 +311,29 @@ static int encode_dvd_subtitles(AVCodecContext *avctx,
         /* Count pixels outside the virtual rectangle as transparent */
         global_palette_hits[0] = vrect.w * vrect.h;
         for (i = 0; i < rects; i++)
-            global_palette_hits[0] -= h->rects[i]->w * h->rects[i]->h;
+            global_palette_hits[0] -= frame->subtitle_areas[i]->w * frame->subtitle_areas[i]->h;
     }
 
     for (i = 0; i < rects; i++)
-        count_colors(avctx, global_palette_hits, h->rects[i]);
+        count_colors(avctx, global_palette_hits, frame->subtitle_areas[i]);
     select_palette(avctx, out_palette, out_alpha, global_palette_hits);
 
     if (rects > 1) {
-        if (!(vrect_data = av_calloc(vrect.w, vrect.h)))
+
+        vrect.buf[0] = av_buffer_allocz((size_t)vrect.w * vrect.h);
+        if (!vrect.buf[0])
             return AVERROR(ENOMEM);
-        vrect.data    [0] = vrect_data;
+
         vrect.linesize[0] = vrect.w;
         for (i = 0; i < rects; i++) {
-            build_color_map(avctx, cmap, (uint32_t *)h->rects[i]->data[1],
+            build_color_map(avctx, cmap, frame->subtitle_areas[i]->pal,
                             out_palette, out_alpha);
-            copy_rectangle(&vrect, h->rects[i], cmap);
+            copy_rectangle(&vrect, frame->subtitle_areas[i], cmap);
         }
         for (i = 0; i < 4; i++)
             cmap[i] = i;
     } else {
-        build_color_map(avctx, cmap, (uint32_t *)h->rects[0]->data[1],
+        build_color_map(avctx, cmap, frame->subtitle_areas[0]->pal,
                         out_palette, out_alpha);
     }
 
@@ -336,6 +344,16 @@ static int encode_dvd_subtitles(AVCodecContext *avctx,
                out_palette[i], out_alpha[i] >> 4);
     av_log(avctx, AV_LOG_DEBUG, "\n");
 
+
+    ret = ff_get_encode_buffer(avctx, avpkt, 4 + vrect.w * vrect.h / 2 + 17 + 21, 0);
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
+        return ret;
+    }
+
+    outbuf_size = avpkt->size;
+    outbuf = avpkt->data;
+
     // encode data block
     q = outbuf + 4;
     offset1 = q - outbuf;
@@ -345,10 +363,10 @@ static int encode_dvd_subtitles(AVCodecContext *avctx,
         ret = AVERROR_BUFFER_TOO_SMALL;
         goto fail;
     }
-    dvd_encode_rle(&q, vrect.data[0], vrect.w * 2,
+    dvd_encode_rle(&q, vrect.buf[0]->data, vrect.w * 2,
                    vrect.w, (vrect.h + 1) >> 1, cmap);
     offset2 = q - outbuf;
-    dvd_encode_rle(&q, vrect.data[0] + vrect.w, vrect.w * 2,
+    dvd_encode_rle(&q, vrect.buf[0]->data + vrect.w, vrect.w * 2,
                    vrect.w, vrect.h >> 1, cmap);
 
     if (dvdc->even_rows_fix && (vrect.h & 1)) {
@@ -363,7 +381,7 @@ static int encode_dvd_subtitles(AVCodecContext *avctx,
     bytestream_put_be16(&qq, q - outbuf);
 
     // send start display command
-    bytestream_put_be16(&q, (h->start_display_time*90) >> 10);
+    bytestream_put_be16(&q, 0);
     bytestream_put_be16(&q, (q - outbuf) /*- 2 */ + 8 + 12 + 2);
     *q++ = 0x03; // palette - 4 nibbles
     *q++ = (out_palette[3] << 4) | out_palette[2];
@@ -401,7 +419,8 @@ static int encode_dvd_subtitles(AVCodecContext *avctx,
     *q++ = 0xff; // terminating command
 
     // send stop display command last
-    bytestream_put_be16(&q, (h->end_display_time*90) >> 10);
+    duration_ms = av_rescale_q(frame->subtitle_timing.duration, AV_TIME_BASE_Q, (AVRational){ 1, 1000 });
+    bytestream_put_be16(&q, (duration_ms*90) >> 10);
     bytestream_put_be16(&q, (q - outbuf) - 2 /*+ 4*/);
     *q++ = 0x02; // set end
     *q++ = 0xff; // terminating command
@@ -410,7 +429,9 @@ static int encode_dvd_subtitles(AVCodecContext *avctx,
     bytestream_put_be16(&qq, q - outbuf);
 
     av_log(NULL, AV_LOG_DEBUG, "subtitle_packet size=%"PTRDIFF_SPECIFIER"\n", q - outbuf);
-    ret = q - outbuf;
+    avpkt->size = q - outbuf;
+    ret = 0;
+    *got_packet = 1;
 
 fail:
     av_free(vrect_data);
@@ -474,14 +495,13 @@ static int dvdsub_init(AVCodecContext *avctx)
     return 0;
 }
 
-static int dvdsub_encode(AVCodecContext *avctx,
-                         unsigned char *buf, int buf_size,
-                         const AVSubtitle *sub)
+static int dvdsub_encode(struct AVCodecContext* avctx, struct AVPacket* avpkt,
+                         const struct AVFrame* frame, int* got_packet)
 {
     //DVDSubtitleContext *s = avctx->priv_data;
     int ret;
 
-    ret = encode_dvd_subtitles(avctx, buf, buf_size, sub);
+    ret = encode_dvd_subtitles(avctx, avpkt, frame, got_packet);
     return ret;
 }
 
@@ -506,7 +526,7 @@ const FFCodec ff_dvdsub_encoder = {
     .p.type         = AVMEDIA_TYPE_SUBTITLE,
     .p.id           = AV_CODEC_ID_DVD_SUBTITLE,
     .init           = dvdsub_init,
-    FF_CODEC_ENCODE_SUB_CB(dvdsub_encode),
+    FF_CODEC_ENCODE_CB(dvdsub_encode),
     .p.priv_class   = &dvdsubenc_class,
     .priv_data_size = sizeof(DVDSubtitleContext),
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,

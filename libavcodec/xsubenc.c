@@ -23,6 +23,7 @@
 #include "avcodec.h"
 #include "bytestream.h"
 #include "codec_internal.h"
+#include "encode.h"
 #include "put_bits.h"
 
 /**
@@ -111,39 +112,56 @@ static int make_tc(uint64_t ms, int *tc)
     return ms > 99;
 }
 
-static int xsub_encode(AVCodecContext *avctx, unsigned char *buf,
-                       int bufsize, const AVSubtitle *h)
+static int xsub_encode(AVCodecContext* avctx, AVPacket* avpkt,
+                       const AVFrame* frame, int* got_packet)
 {
-    uint64_t startTime = h->pts / 1000; // FIXME: need better solution...
-    uint64_t endTime = startTime + h->end_display_time - h->start_display_time;
+    const int64_t duration_ms = (int64_t)((double)frame->subtitle_timing.duration * av_q2d(AV_TIME_BASE_Q) * 1000);
+    const uint64_t startTime = (int64_t)((double)frame->subtitle_timing.start_pts * av_q2d(AV_TIME_BASE_Q) * 1000);
+    const uint64_t endTime   = startTime + duration_ms;
     int start_tc[4], end_tc[4];
-    uint8_t *hdr = buf + 27; // Point behind the timestamp
+    uint8_t *hdr;
     uint8_t *rlelenptr;
     uint16_t width, height;
-    int i;
+    int i, ret;
     PutBitContext pb;
+    uint8_t* buf;
+    int64_t req_size;
 
-    if (bufsize < 27 + 7*2 + 4*3) {
-        av_log(avctx, AV_LOG_ERROR, "Buffer too small for XSUB header.\n");
-        return AVERROR_BUFFER_TOO_SMALL;
+    if (!frame->num_subtitle_areas) {
+        // Don't encode empty sub events
+        return 0;
     }
 
+    // Estimate size (timestamp 27, header 7*2 + 4*3, padding 10)
+    req_size = 27 + 7*2 + 4*3 + 10;
+    req_size += frame->subtitle_areas[0]->linesize[0] * frame->subtitle_areas[0]->h;
+    req_size += 256; // Palette
+
+    ret = ff_get_encode_buffer(avctx, avpkt, req_size, 0);
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
+        return ret;
+    }
+
+    buf = avpkt->data;
+    hdr = avpkt->data + 27; // Point behind the timestamp
+
     // TODO: support multiple rects
-    if (h->num_rects != 1)
-        av_log(avctx, AV_LOG_WARNING, "Only single rects supported (%d in subtitle.)\n", h->num_rects);
+    if (frame->num_subtitle_areas != 1)
+        av_log(avctx, AV_LOG_WARNING, "Only single rects supported (%d in subtitle.)\n", frame->num_subtitle_areas);
 
     // TODO: render text-based subtitles into bitmaps
-    if (!h->rects[0]->data[0] || !h->rects[0]->data[1]) {
+    if (!frame->subtitle_areas[0]->buf[0]->data || !frame->subtitle_areas[0]->pal) {
         av_log(avctx, AV_LOG_WARNING, "No subtitle bitmap available.\n");
         return AVERROR(EINVAL);
     }
 
     // TODO: color reduction, similar to dvdsub encoder
-    if (h->rects[0]->nb_colors > 4)
-        av_log(avctx, AV_LOG_WARNING, "No more than 4 subtitle colors supported (%d found.)\n", h->rects[0]->nb_colors);
+    if (frame->subtitle_areas[0]->nb_colors > 4)
+        av_log(avctx, AV_LOG_WARNING, "No more than 4 subtitle colors supported (%d found.)\n", frame->subtitle_areas[0]->nb_colors);
 
     // TODO: Palette swapping if color zero is not transparent
-    if (((uint32_t *)h->rects[0]->data[1])[0] & 0xff000000)
+    if (((uint32_t *)frame->subtitle_areas[0]->pal)[0] & 0xff000000)
         av_log(avctx, AV_LOG_WARNING, "Color index 0 is not transparent. Transparency will be messed up.\n");
 
     if (make_tc(startTime, start_tc) || make_tc(endTime, end_tc)) {
@@ -151,7 +169,7 @@ static int xsub_encode(AVCodecContext *avctx, unsigned char *buf,
         return AVERROR(EINVAL);
     }
 
-    snprintf(buf, 28,
+    snprintf((char *)avpkt->data, 28,
         "[%02d:%02d:%02d.%03d-%02d:%02d:%02d.%03d]",
         start_tc[3], start_tc[2], start_tc[1], start_tc[0],
         end_tc[3],   end_tc[2],   end_tc[1],   end_tc[0]);
@@ -160,45 +178,47 @@ static int xsub_encode(AVCodecContext *avctx, unsigned char *buf,
     // 2 pixels required on either side of subtitle.
     // Possibly due to limitations of hardware renderers.
     // TODO: check if the bitmap is already padded
-    width  = FFALIGN(h->rects[0]->w, 2) + PADDING * 2;
-    height = FFALIGN(h->rects[0]->h, 2);
+    width  = FFALIGN(frame->subtitle_areas[0]->w, 2) + PADDING * 2;
+    height = FFALIGN(frame->subtitle_areas[0]->h, 2);
 
     bytestream_put_le16(&hdr, width);
     bytestream_put_le16(&hdr, height);
-    bytestream_put_le16(&hdr, h->rects[0]->x);
-    bytestream_put_le16(&hdr, h->rects[0]->y);
-    bytestream_put_le16(&hdr, h->rects[0]->x + width -1);
-    bytestream_put_le16(&hdr, h->rects[0]->y + height -1);
+    bytestream_put_le16(&hdr, frame->subtitle_areas[0]->x);
+    bytestream_put_le16(&hdr, frame->subtitle_areas[0]->y);
+    bytestream_put_le16(&hdr, frame->subtitle_areas[0]->x + width -1);
+    bytestream_put_le16(&hdr, frame->subtitle_areas[0]->y + height -1);
 
     rlelenptr = hdr; // Will store length of first field here later.
     hdr+=2;
 
     // Palette
     for (i=0; i<4; i++)
-        bytestream_put_be24(&hdr, ((uint32_t *)h->rects[0]->data[1])[i]);
+        bytestream_put_be24(&hdr, ((uint32_t *)frame->subtitle_areas[0]->pal)[i]);
 
     // Bitmap
     // RLE buffer. Reserve 2 bytes for possible padding after the last row.
-    init_put_bits(&pb, hdr, bufsize - (hdr - buf) - 2);
-    if (xsub_encode_rle(&pb, h->rects[0]->data[0],
-                        h->rects[0]->linesize[0] * 2,
-                        h->rects[0]->w, (h->rects[0]->h + 1) >> 1))
+    init_put_bits(&pb, hdr, avpkt->size - (hdr - buf) - 2);
+    if (xsub_encode_rle(&pb, frame->subtitle_areas[0]->buf[0]->data,
+                        frame->subtitle_areas[0]->linesize[0] * 2,
+                        frame->subtitle_areas[0]->w, (frame->subtitle_areas[0]->h + 1) >> 1))
         return AVERROR_BUFFER_TOO_SMALL;
     bytestream_put_le16(&rlelenptr, put_bytes_count(&pb, 0)); // Length of first field
 
-    if (xsub_encode_rle(&pb, h->rects[0]->data[0] + h->rects[0]->linesize[0],
-                        h->rects[0]->linesize[0] * 2,
-                        h->rects[0]->w, h->rects[0]->h >> 1))
+    if (xsub_encode_rle(&pb, frame->subtitle_areas[0]->buf[0]->data + frame->subtitle_areas[0]->linesize[0],
+                        frame->subtitle_areas[0]->linesize[0] * 2,
+                        frame->subtitle_areas[0]->w, frame->subtitle_areas[0]->h >> 1))
         return AVERROR_BUFFER_TOO_SMALL;
 
     // Enforce total height to be a multiple of 2
-    if (h->rects[0]->h & 1) {
-        put_xsub_rle(&pb, h->rects[0]->w, PADDING_COLOR);
+    if (frame->subtitle_areas[0]->h & 1) {
+        put_xsub_rle(&pb, frame->subtitle_areas[0]->w, PADDING_COLOR);
     }
 
     flush_put_bits(&pb);
 
-    return hdr - buf + put_bytes_output(&pb);
+    avpkt->size = hdr - buf + put_bytes_output(&pb);
+    *got_packet = 1;
+    return 0;
 }
 
 static av_cold int xsub_encoder_init(AVCodecContext *avctx)
@@ -217,6 +237,6 @@ const FFCodec ff_xsub_encoder = {
     .p.type     = AVMEDIA_TYPE_SUBTITLE,
     .p.id       = AV_CODEC_ID_XSUB,
     .init       = xsub_encoder_init,
-    FF_CODEC_ENCODE_SUB_CB(xsub_encode),
+    FF_CODEC_ENCODE_CB(xsub_encode),
     .caps_internal = FF_CODEC_CAP_INIT_THREADSAFE,
 };

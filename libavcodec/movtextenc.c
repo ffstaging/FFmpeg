@@ -30,6 +30,7 @@
 #include "libavutil/ass_internal.h"
 #include "bytestream.h"
 #include "codec_internal.h"
+#include "encode.h"
 
 #define STYLE_FLAG_BOLD         (1<<0)
 #define STYLE_FLAG_ITALIC       (1<<1)
@@ -73,6 +74,7 @@ typedef struct {
     AVCodecContext *avctx;
 
     ASSSplitContext *ass_ctx;
+    int is_default_ass_context;
     ASSStyle *ass_dialog_style;
     StyleBox *style_attributes;
     unsigned  count;
@@ -329,7 +331,7 @@ static av_cold int mov_text_encode_init(AVCodecContext *avctx)
 
     av_bprint_init(&s->buffer, 0, AV_BPRINT_SIZE_UNLIMITED);
 
-    s->ass_ctx = avpriv_ass_split(avctx->subtitle_header);
+    s->ass_ctx = avpriv_ass_split((char*)avctx->subtitle_header);
     if (!s->ass_ctx)
         return AVERROR_INVALIDDATA;
     ret = encode_sample_description(avctx);
@@ -633,56 +635,112 @@ static const ASSCodesCallbacks mov_text_callbacks = {
     .end              = mov_text_end_cb,
 };
 
-static int mov_text_encode_frame(AVCodecContext *avctx, unsigned char *buf,
-                                 int bufsize, const AVSubtitle *sub)
+static void ensure_ass_context(AVCodecContext* avctx, const AVFrame* frame)
+{
+    MovTextContext* s = avctx->priv_data;
+    int ret;
+
+    if (s->ass_ctx && !s->is_default_ass_context)
+        // We already have a (non-default context)
+        return;
+
+    if (!frame->num_subtitle_areas)
+        // Don't need ass context for processing empty subtitle frames
+        return;
+
+    // The frame has content, so we need to set up a context
+    if (frame->subtitle_header && frame->subtitle_header->size > 0) {
+        const char* subtitle_header = (char*)frame->subtitle_header->data;
+        avpriv_ass_split_free(s->ass_ctx);
+        s->ass_ctx = avpriv_ass_split(subtitle_header);
+        s->is_default_ass_context = 0;
+    }
+    else if (!s->ass_ctx) {
+        char* subtitle_header = avpriv_ass_get_subtitle_header_default(0);
+        if (!subtitle_header)
+            return;
+
+        s->ass_ctx = avpriv_ass_split(subtitle_header);
+        s->is_default_ass_context = 1;
+        av_free(subtitle_header);
+    }
+
+    if (s->ass_ctx && !avctx->extradata_size) {
+        ret = encode_sample_description(avctx);
+        if (ret < 0)
+            av_log(avctx, AV_LOG_ERROR, "Error during encode_sample_description().\n");
+    }
+}
+
+static int mov_text_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
+                                 const AVFrame *frame, int *got_packet)
 {
     MovTextContext *s = avctx->priv_data;
     ASSDialog *dialog;
-    int i, length;
+    int i, ret = 0;
+    size_t j;
+    uint8_t* buf;
+
+    ensure_ass_context(avctx, frame);
 
     s->text_pos = 0;
     s->count = 0;
     s->box_flags = 0;
     av_bprint_clear(&s->buffer);
-    for (i = 0; i < sub->num_rects; i++) {
-        const char *ass = sub->rects[i]->ass;
+    for (i = 0; i < frame->num_subtitle_areas; i++) {
+        const char *ass = frame->subtitle_areas[i]->ass;
 
-        if (sub->rects[i]->type != SUBTITLE_ASS) {
-            av_log(avctx, AV_LOG_ERROR, "Only SUBTITLE_ASS type supported.\n");
+        if (frame->subtitle_areas[i]->type != AV_SUBTITLE_FMT_ASS) {
+            av_log(avctx, AV_LOG_ERROR, "Only AV_SUBTITLE_FMT_ASS type supported.\n");
             return AVERROR(EINVAL);
         }
 
-        dialog = avpriv_ass_split_dialog(s->ass_ctx, ass);
-        if (!dialog)
-            return AVERROR(ENOMEM);
-        mov_text_dialog(s, dialog);
-        avpriv_ass_split_override_codes(&mov_text_callbacks, s, dialog->text);
-        avpriv_ass_free_dialog(&dialog);
+        if (ass) {
+
+            if (i > 0)
+                mov_text_new_line_cb(s, 0);
+
+            dialog = avpriv_ass_split_dialog(s->ass_ctx, ass);
+            if (!dialog)
+                return AVERROR(ENOMEM);
+            mov_text_dialog(s, dialog);
+            avpriv_ass_split_override_codes(&mov_text_callbacks, s, dialog->text);
+            avpriv_ass_free_dialog(&dialog);
+
+        }
     }
 
-    if (s->buffer.len > UINT16_MAX)
-        return AVERROR(ERANGE);
+    if (!av_bprint_is_complete(&s->buffer)) {
+        return AVERROR(ENOMEM);
+    }
+
+    for (j = 0; j < box_count; j++) {
+        box_types[j].encode(s);
+    }
+
+    ret = ff_get_encode_buffer(avctx, avpkt, s->buffer.len + 3, 0);
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
+        return ret;
+    }
+
+    buf = avpkt->data;
+
     AV_WB16(buf, s->buffer.len);
     buf += 2;
 
-    for (size_t j = 0; j < box_count; j++)
-        box_types[j].encode(s);
-
-    if (!av_bprint_is_complete(&s->buffer))
-        return AVERROR(ENOMEM);
-
-    if (!s->buffer.len)
-        return 0;
-
-    if (s->buffer.len > bufsize - 3) {
+    if (s->buffer.len > avpkt->size - 3) {
         av_log(avctx, AV_LOG_ERROR, "Buffer too small for ASS event.\n");
-        return AVERROR_BUFFER_TOO_SMALL;
+        ret = AVERROR_BUFFER_TOO_SMALL;
+        goto exit;
     }
 
     memcpy(buf, s->buffer.str, s->buffer.len);
-    length = s->buffer.len + 2;
+    avpkt->size = s->buffer.len + 2;
+    *got_packet = 1;
 
-    return length;
+exit:
+    return ret;
 }
 
 #define OFFSET(x) offsetof(MovTextContext, x)
@@ -707,7 +765,7 @@ const FFCodec ff_movtext_encoder = {
     .priv_data_size = sizeof(MovTextContext),
     .p.priv_class   = &mov_text_encoder_class,
     .init           = mov_text_encode_init,
-    FF_CODEC_ENCODE_SUB_CB(mov_text_encode_frame),
+    FF_CODEC_ENCODE_CB(mov_text_encode_frame),
     .close          = mov_text_encode_close,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };

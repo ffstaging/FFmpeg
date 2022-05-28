@@ -75,7 +75,6 @@ int av_codec_is_encoder(const AVCodec *avcodec)
 {
     const FFCodec *const codec = ffcodec(avcodec);
     return codec && (codec->cb_type == FF_CODEC_CB_TYPE_ENCODE     ||
-                     codec->cb_type == FF_CODEC_CB_TYPE_ENCODE_SUB ||
                      codec->cb_type == FF_CODEC_CB_TYPE_RECEIVE_PACKET);
 }
 

@@ -22,6 +22,7 @@
 
 #include <stdarg.h>
 #include "avcodec.h"
+#include "encode.h"
 #include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
 #include "codec_internal.h"
@@ -32,6 +33,7 @@
 typedef struct {
     AVCodecContext *avctx;
     ASSSplitContext *ass_ctx;
+    int is_default_ass_context;
     AVBPrint buffer;
     unsigned timestamp_end;
     int count;
@@ -155,43 +157,81 @@ static const ASSCodesCallbacks webvtt_callbacks = {
     .end              = webvtt_end_cb,
 };
 
-static int webvtt_encode_frame(AVCodecContext *avctx,
-                               unsigned char *buf, int bufsize, const AVSubtitle *sub)
+static void ensure_ass_context(WebVTTContext* s, const AVFrame* frame)
+{
+    if (s->ass_ctx && !s->is_default_ass_context)
+        // We already have a (non-default context)
+        return;
+
+    if (!frame->num_subtitle_areas)
+        // Don't need ass context for processing empty subtitle frames
+        return;
+
+    // The frame has content, so we need to set up a context
+    if (frame->subtitle_header && frame->subtitle_header->size > 0) {
+        const char* subtitle_header = (char*)frame->subtitle_header->data;
+        avpriv_ass_split_free(s->ass_ctx);
+        s->ass_ctx = avpriv_ass_split(subtitle_header);
+        s->is_default_ass_context = 0;
+    }
+    else if (!s->ass_ctx) {
+        char* subtitle_header = avpriv_ass_get_subtitle_header_default(0);
+        if (!subtitle_header)
+            return;
+
+        s->ass_ctx = avpriv_ass_split(subtitle_header);
+        s->is_default_ass_context = 1;
+        av_free(subtitle_header);
+    }
+}
+
+static int webvtt_encode_frame(AVCodecContext* avctx, AVPacket* avpkt,
+                               const AVFrame* frame, int* got_packet)
 {
     WebVTTContext *s = avctx->priv_data;
     ASSDialog *dialog;
-    int i;
+    int ret, i;
+
+    ensure_ass_context(s, frame);
 
     av_bprint_clear(&s->buffer);
 
-    for (i=0; i<sub->num_rects; i++) {
-        const char *ass = sub->rects[i]->ass;
+    for (i=0; i< frame->num_subtitle_areas; i++) {
+        const char *ass = frame->subtitle_areas[i]->ass;
 
-        if (sub->rects[i]->type != SUBTITLE_ASS) {
-            av_log(avctx, AV_LOG_ERROR, "Only SUBTITLE_ASS type supported.\n");
+        if (frame->subtitle_areas[i]->type != AV_SUBTITLE_FMT_ASS) {
+            av_log(avctx, AV_LOG_ERROR, "Only AV_SUBTITLE_FMT_ASS type supported.\n");
             return AVERROR(EINVAL);
         }
 
-        dialog = avpriv_ass_split_dialog(s->ass_ctx, ass);
-        if (!dialog)
-            return AVERROR(ENOMEM);
-        webvtt_style_apply(s, dialog->style);
-        avpriv_ass_split_override_codes(&webvtt_callbacks, s, dialog->text);
-        avpriv_ass_free_dialog(&dialog);
+        if (ass) {
+
+            if (i > 0)
+                webvtt_new_line_cb(s, 0);
+
+            dialog = avpriv_ass_split_dialog(s->ass_ctx, ass);
+            if (!dialog)
+                return AVERROR(ENOMEM);
+            webvtt_style_apply(s, dialog->style);
+            avpriv_ass_split_override_codes(&webvtt_callbacks, s, dialog->text);
+            avpriv_ass_free_dialog(&dialog);
+        }
     }
 
     if (!av_bprint_is_complete(&s->buffer))
         return AVERROR(ENOMEM);
-    if (!s->buffer.len)
-        return 0;
 
-    if (s->buffer.len > bufsize) {
-        av_log(avctx, AV_LOG_ERROR, "Buffer too small for ASS event.\n");
-        return AVERROR_BUFFER_TOO_SMALL;
+    ret = ff_get_encode_buffer(avctx, avpkt, s->buffer.len + 1, 0);
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
+        return ret;
     }
-    memcpy(buf, s->buffer.str, s->buffer.len);
 
-    return s->buffer.len;
+    memcpy(avpkt->data, s->buffer.str, s->buffer.len);
+    avpkt->size = s->buffer.len;
+    *got_packet = s->buffer.len > 0;
+
+    return 0;
 }
 
 static int webvtt_encode_close(AVCodecContext *avctx)
@@ -206,9 +246,9 @@ static av_cold int webvtt_encode_init(AVCodecContext *avctx)
 {
     WebVTTContext *s = avctx->priv_data;
     s->avctx = avctx;
-    s->ass_ctx = avpriv_ass_split(avctx->subtitle_header);
+    s->ass_ctx = avpriv_ass_split((char*)avctx->subtitle_header);
     av_bprint_init(&s->buffer, 0, AV_BPRINT_SIZE_UNLIMITED);
-    return s->ass_ctx ? 0 : AVERROR_INVALIDDATA;
+    return 0;
 }
 
 const FFCodec ff_webvtt_encoder = {
@@ -218,7 +258,7 @@ const FFCodec ff_webvtt_encoder = {
     .p.id           = AV_CODEC_ID_WEBVTT,
     .priv_data_size = sizeof(WebVTTContext),
     .init           = webvtt_encode_init,
-    FF_CODEC_ENCODE_SUB_CB(webvtt_encode_frame),
+    FF_CODEC_ENCODE_CB(webvtt_encode_frame),
     .close          = webvtt_encode_close,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

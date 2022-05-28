@@ -25,69 +25,194 @@
 
 #include "avcodec.h"
 #include "codec_internal.h"
+#include "encode.h"
 #include "libavutil/ass_internal.h"
 #include "libavutil/avstring.h"
 #include "libavutil/internal.h"
 #include "libavutil/mem.h"
 
+typedef struct {
+    AVCodecContext *avctx;
+    AVFrame* current_frame;
+    int have_frame;
+    int current_area;
+} AssEncContext;
+
+static void check_write_header(AVCodecContext* avctx, const AVFrame* frame)
+{
+    if (avctx->extradata_size)
+        return;
+
+    if (frame->subtitle_header && frame->subtitle_header->size > 0) {
+        const char* subtitle_header = (char*)frame->subtitle_header->data;
+        avctx->extradata_size = strlen(subtitle_header);
+        avctx->extradata = av_mallocz(frame->subtitle_header->size + 1);
+        memcpy(avctx->extradata, subtitle_header, avctx->extradata_size);
+        avctx->extradata[avctx->extradata_size] = 0;
+    }
+
+    if (!avctx->extradata_size) {
+        const char* subtitle_header = avpriv_ass_get_subtitle_header_default(0);
+        if (!subtitle_header)
+            return;
+
+        avctx->extradata_size = strlen(subtitle_header);
+        avctx->extradata = av_mallocz(avctx->extradata_size + 1);
+        memcpy(avctx->extradata, subtitle_header, avctx->extradata_size);
+        avctx->extradata[avctx->extradata_size] = 0;
+        av_freep(&subtitle_header);
+    }
+}
+
 static av_cold int ass_encode_init(AVCodecContext *avctx)
 {
-    avctx->extradata = av_malloc(avctx->subtitle_header_size + 1);
-    if (!avctx->extradata)
-        return AVERROR(ENOMEM);
-    memcpy(avctx->extradata, avctx->subtitle_header, avctx->subtitle_header_size);
-    avctx->extradata_size = avctx->subtitle_header_size;
-    avctx->extradata[avctx->extradata_size] = 0;
+    AssEncContext *s = avctx->priv_data;
+
+    if (avctx->subtitle_header_size) {
+        avctx->extradata = av_malloc(avctx->subtitle_header_size + 1);
+        if (!avctx->extradata)
+            return AVERROR(ENOMEM);
+        memcpy(avctx->extradata, avctx->subtitle_header, avctx->subtitle_header_size);
+        avctx->extradata_size                   = avctx->subtitle_header_size;
+        avctx->extradata[avctx->extradata_size] = 0;
+    }
+
+    s->current_frame = av_frame_alloc();
     return 0;
 }
 
-static int ass_encode_frame(AVCodecContext *avctx,
-                            unsigned char *buf, int bufsize,
-                            const AVSubtitle *sub)
+static av_cold int ass_encode_close(AVCodecContext *avctx)
 {
-    int i, len, total_len = 0;
+    AssEncContext *s = avctx->priv_data;
+    av_frame_free(&s->current_frame);
+    return 0;
+}
 
-    for (i=0; i<sub->num_rects; i++) {
-        const char *ass = sub->rects[i]->ass;
+////static int ass_encode_frame(AVCodecContext* avctx, AVPacket* avpkt,
+////                            const AVFrame* frame, int* got_packet)
+////{
+////    int ret;
+////    size_t req_len = 0, total_len = 0;
+////
+////    check_write_header(avctx, frame);
+////
+////    for (unsigned i = 0; i < frame->num_subtitle_areas; i++) {
+////        const char *ass = frame->subtitle_areas[i]->ass;
+////
+////        if (frame->subtitle_areas[i]->type != AV_SUBTITLE_FMT_ASS) {
+////            av_log(avctx, AV_LOG_ERROR, "Only AV_SUBTITLE_FMT_ASS type supported.\n");
+////            return AVERROR(EINVAL);
+////        }
+////
+////        if (ass)
+////            req_len += strlen(ass);
+////    }
+////
+////    ret = ff_get_encode_buffer(avctx, avpkt, req_len + 1, 0);
+////    if (ret < 0) {
+////        av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
+////        return ret;
+////    }
+////
+////    for (unsigned i = 0; i < frame->num_subtitle_areas; i++) {
+////        const char *ass = frame->subtitle_areas[i]->ass;
+////
+////        if (ass) {
+////            size_t len = av_strlcpy((char *)avpkt->data + total_len, ass, avpkt->size - total_len);
+////            total_len += len;
+////        }
+////    }
+////
+////    avpkt->size = total_len;
+////    *got_packet = total_len > 0;
+////
+////    return 0;
+////}
 
-        if (sub->rects[i]->type != SUBTITLE_ASS) {
-            av_log(avctx, AV_LOG_ERROR, "Only SUBTITLE_ASS type supported.\n");
+static int ass_receive_packet(AVCodecContext *avctx, AVPacket *avpkt)
+{
+    AssEncContext *s = avctx->priv_data;
+    int ret;
+
+    if (!s->have_frame) {
+        s->current_area = 0;
+        ret = ff_encode_get_frame(avctx, s->current_frame);
+
+        if (ret < 0) {
+            av_frame_unref(s->current_frame);
+            return ret;
+        }
+
+        s->have_frame = 1;
+    }
+
+    check_write_header(avctx, s->current_frame);
+
+    if (s->current_frame->repeat_sub) {
+        av_frame_unref(s->current_frame);
+        s->have_frame = 0;
+        return AVERROR(EAGAIN);
+    }
+
+    if (s->current_area < s->current_frame->num_subtitle_areas) {
+        const AVSubtitleArea *area = s->current_frame->subtitle_areas[s->current_area];
+        const char *ass = area->ass;
+
+        if (area->type != AV_SUBTITLE_FMT_ASS) {
+            av_log(avctx, AV_LOG_ERROR, "Only AV_SUBTITLE_FMT_ASS type supported.\n");
             return AVERROR(EINVAL);
         }
 
-        len = av_strlcpy(buf+total_len, ass, bufsize-total_len);
+        if (ass) {
+            size_t len = strlen(ass);
 
-        if (len > bufsize-total_len-1) {
-            av_log(avctx, AV_LOG_ERROR, "Buffer too small for ASS event.\n");
-            return AVERROR_BUFFER_TOO_SMALL;
+            ret = ff_get_encode_buffer(avctx, avpkt, len + 1, 0);
+            if (ret < 0) {
+                av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
+                return ret;
+            }
+
+            len = av_strlcpy((char *)avpkt->data, ass, avpkt->size);
+
+            avpkt->size = len;
         }
 
-        total_len += len;
+        s->current_area++;
     }
 
-    return total_len;
+    if (s->current_area < s->current_frame->num_subtitle_areas)
+        return 0;
+
+    av_frame_unref(s->current_frame);
+    s->have_frame = 0;
+
+    return 0;
 }
 
 #if CONFIG_SSA_ENCODER
 const FFCodec ff_ssa_encoder = {
-    .p.name       = "ssa",
-    .p.long_name  = NULL_IF_CONFIG_SMALL("ASS (Advanced SubStation Alpha) subtitle"),
-    .p.type       = AVMEDIA_TYPE_SUBTITLE,
-    .p.id         = AV_CODEC_ID_ASS,
-    .init         = ass_encode_init,
-    FF_CODEC_ENCODE_SUB_CB(ass_encode_frame),
+    .p.name           = "ssa",
+    .p.long_name      = NULL_IF_CONFIG_SMALL("ASS (Advanced SubStation Alpha) subtitle"),
+    .p.type           = AVMEDIA_TYPE_SUBTITLE,
+    .p.id             = AV_CODEC_ID_ASS,
+    .priv_data_size = sizeof(AssEncContext),
+    .init           = ass_encode_init,
+    .close          = ass_encode_close,
+    FF_CODEC_RECEIVE_PACKET_CB(ass_receive_packet),
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
 #endif
 
 #if CONFIG_ASS_ENCODER
 const FFCodec ff_ass_encoder = {
-    .p.name       = "ass",
-    .p.long_name  = NULL_IF_CONFIG_SMALL("ASS (Advanced SubStation Alpha) subtitle"),
-    .p.type       = AVMEDIA_TYPE_SUBTITLE,
-    .p.id         = AV_CODEC_ID_ASS,
-    .init         = ass_encode_init,
-    FF_CODEC_ENCODE_SUB_CB(ass_encode_frame),
+    .p.name           = "ass",
+    .p.long_name      = NULL_IF_CONFIG_SMALL("ASS (Advanced SubStation Alpha) subtitle"),
+    .p.type           = AVMEDIA_TYPE_SUBTITLE,
+    .priv_data_size = sizeof(AssEncContext),
+    .p.id             = AV_CODEC_ID_ASS,
+    .init           = ass_encode_init,
+    .close          = ass_encode_close,
+    FF_CODEC_RECEIVE_PACKET_CB(ass_receive_packet),
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
 #endif

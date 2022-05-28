@@ -27106,6 +27106,119 @@ Overlay PGS subtitles
 ffmpeg -i "https://streams.videolan.org/samples/sub/PGS/Girl_With_The_Dragon_Tattoo_2%3A23%3A56.mkv" -filter_complex "[0:0][0:1]overlaygraphicsubs" output.mp4
 @end example
 @end itemize
+
+@section overlaytextsubs
+
+Overlay text subtitles onto a video stream.
+
+This filter supersedes the classic @ref{subtitles} filter opposed to which it does no longer require to open and access the source stream separately, which is often causing problems or doesn't even work for non-local or slow sources.
+
+Inputs:
+@itemize
+@item 0: Video [YUV420P, YUV422P, YUV444P, ARGB, RGBA, ABGR, BGRA, RGB24, BGR24]
+@item 1: Subtitles [TEXT]
+@end itemize
+
+Outputs:
+@itemize
+@item 0: Video (same as input)
+@end itemize
+
+It accepts the following parameters:
+
+@table @option
+
+@item alpha
+Process alpha channel, by default alpha channel is untouched.
+
+@item fonts_dir
+Set a directory path containing fonts that can be used by the filter.
+These fonts will be used in addition to whatever the font provider uses.
+
+@item default_font_path
+Path to a font file to be used as the default font.
+
+@item font_size
+Set the default font size.
+
+@item fontconfig_file
+Path to ASS fontconfig configuration file.
+
+@item force_style
+Override default style or script info parameters of the subtitles. It accepts a
+string containing ASS style format @code{KEY=VALUE} couples separated by ",".
+
+@item margin
+Set the rendering margin in pixels.
+
+@item render_latest_only
+For rendering, alway use the latest event only, which is covering the given point in time
+@end table
+
+@subsection Examples
+
+@itemize
+@item
+Overlay ASS subtitles with animations:
+@example
+ffmpeg -i "http://streams.videolan.org/samples/sub/SSA/subtitle_testing_complex.mkv" -filter_complex "[0:v]overlaytextsubs" -map 0 -y out.mkv
+@end example
+@end itemize
+
+@section textsub2video
+
+Converts text subtitles to video frames.
+
+For overlaying text subtitles onto video frames it is recommended to use the overlaytextsubs filter.
+The textsub2video is useful for for creating transparent text-frames when overlay is done via hw acceleration
+
+Inputs:
+@itemize
+@item 0: Subtitles [TEXT]
+@end itemize
+
+Outputs:
+@itemize
+@item 0: Video [RGB32]
+@end itemize
+
+It accepts the following parameters:
+
+@table @option
+
+@item rate, r
+Set the framerate for updating overlay frames.
+Normally, overlay frames will only be updated each time when the subtitles to display are changing.
+In cases where subtitles include advanced features (like animation), this parameter determines the frequency by which the overlay frames should be updated.
+
+@item size, s
+Set the output frame size.
+Allows to override the size of output video frames.
+
+@item fonts_dir
+Set a directory path containing fonts that can be used by the filter.
+These fonts will be used in addition to whatever the font provider uses.
+
+@item default_font_path
+Path to a font file to be used as the default font.
+
+@item font_size
+Set the default font size.
+
+@item fontconfig_file
+Path to ASS fontconfig configuration file.
+
+@item force_style
+Override default style or script info parameters of the subtitles. It accepts a
+string containing ASS style format @code{KEY=VALUE} couples separated by ",".
+
+@item margin
+Set the rendering margin in pixels.
+
+@item render_latest_only
+For rendering, alway use the latest event only, which is covering the given point in time.
+@end table
+
 @c man end SUBTITLE FILTERS
 
 @chapter Multimedia Filters

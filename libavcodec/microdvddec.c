@@ -309,7 +309,7 @@ static int microdvd_decode_frame(AVCodecContext *avctx, AVSubtitle *sub,
         }
     }
     if (new_line.len) {
-        int ret = ff_ass_add_rect(sub, new_line.str, s->readorder++, 0, NULL, NULL);
+        int ret = avpriv_ass_add_rect(sub, new_line.str, s->readorder++, 0, NULL, NULL);
         av_bprint_finalize(&new_line, NULL);
         if (ret < 0)
             return ret;
@@ -362,8 +362,9 @@ static int microdvd_init(AVCodecContext *avctx)
             }
         }
     }
-    return ff_ass_subtitle_header(avctx, font_buf.str, font_size, color,
-                                  ASS_DEFAULT_BACK_COLOR, bold, italic,
+    return ff_ass_subtitle_header_full(avctx, ASS_DEFAULT_PLAYRESX, ASS_DEFAULT_PLAYRESY,
+                                  font_buf.str, font_size, color, color,
+                                  ASS_DEFAULT_BACK_COLOR, ASS_DEFAULT_BACK_COLOR, bold, italic,
                                   underline, ASS_DEFAULT_BORDERSTYLE,
                                   alignment);
 }

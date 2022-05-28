@@ -22,7 +22,6 @@
 #include "avcodec.h"
 #include "ass.h"
 #include "libavutil/opt.h"
-#include "libavutil/avstring.h"
 #include "libavutil/common.h"
 #include "libavutil/bprint.h"
 #include "libavutil/intreadwrite.h"
@@ -553,7 +552,7 @@ static int mov_text_decode_frame(AVCodecContext *avctx, AVSubtitle *sub,
     } else
         text_to_ass(&buf, ptr, end, avctx);
 
-    ret = ff_ass_add_rect(sub, buf.str, m->readorder++, 0, NULL, NULL);
+    ret = avpriv_ass_add_rect(sub, buf.str, m->readorder++, 0, NULL, NULL);
     av_bprint_finalize(&buf, NULL);
     if (ret < 0)
         return ret;

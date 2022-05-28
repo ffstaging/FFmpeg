@@ -143,7 +143,7 @@ static int sami_decode_frame(AVCodecContext *avctx, AVSubtitle *sub,
         if (ret < 0)
             return ret;
         // TODO: pass escaped sami->encoded_source.str as source
-        ret = ff_ass_add_rect(sub, sami->full.str, sami->readorder++, 0, NULL, NULL);
+        ret = avpriv_ass_add_rect(sub, sami->full.str, sami->readorder++, 0, NULL, NULL);
         if (ret < 0)
             return ret;
     }

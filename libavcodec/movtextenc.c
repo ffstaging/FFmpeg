@@ -26,8 +26,8 @@
 #include "libavutil/intreadwrite.h"
 #include "libavutil/mem.h"
 #include "libavutil/common.h"
-#include "ass_split.h"
-#include "ass.h"
+#include "libavutil/ass_split_internal.h"
+#include "libavutil/ass_internal.h"
 #include "bytestream.h"
 #include "codec_internal.h"
 
@@ -167,7 +167,7 @@ static int mov_text_encode_close(AVCodecContext *avctx)
 {
     MovTextContext *s = avctx->priv_data;
 
-    ff_ass_split_free(s->ass_ctx);
+    avpriv_ass_split_free(s->ass_ctx);
     av_freep(&s->style_attributes);
     av_freep(&s->fonts);
     av_bprint_finalize(&s->buffer, NULL);
@@ -222,7 +222,7 @@ static int encode_sample_description(AVCodecContext *avctx)
     else
         s->font_scale_factor = 1;
 
-    style = ff_ass_style_get(s->ass_ctx, "Default");
+    style = avpriv_ass_style_get(s->ass_ctx, "Default");
     if (!style && ass->styles_count) {
         style = &ass->styles[0];
     }
@@ -329,7 +329,7 @@ static av_cold int mov_text_encode_init(AVCodecContext *avctx)
 
     av_bprint_init(&s->buffer, 0, AV_BPRINT_SIZE_UNLIMITED);
 
-    s->ass_ctx = ff_ass_split(avctx->subtitle_header);
+    s->ass_ctx = avpriv_ass_split(avctx->subtitle_header);
     if (!s->ass_ctx)
         return AVERROR_INVALIDDATA;
     ret = encode_sample_description(avctx);
@@ -566,7 +566,7 @@ static void mov_text_ass_style_set(MovTextContext *s, ASSStyle *style)
 
 static void mov_text_dialog(MovTextContext *s, ASSDialog *dialog)
 {
-    ASSStyle *style = ff_ass_style_get(s->ass_ctx, dialog->style);
+    ASSStyle *style = avpriv_ass_style_get(s->ass_ctx, dialog->style);
 
     s->ass_dialog_style = style;
     mov_text_ass_style_set(s, style);
@@ -580,7 +580,7 @@ static void mov_text_cancel_overrides_cb(void *priv, const char *style_name)
     if (!style_name || !*style_name)
         style = s->ass_dialog_style;
     else
-        style= ff_ass_style_get(s->ass_ctx, style_name);
+        style= avpriv_ass_style_get(s->ass_ctx, style_name);
 
     mov_text_ass_style_set(s, style);
 }
@@ -652,12 +652,12 @@ static int mov_text_encode_frame(AVCodecContext *avctx, unsigned char *buf,
             return AVERROR(EINVAL);
         }
 
-        dialog = ff_ass_split_dialog(s->ass_ctx, ass);
+        dialog = avpriv_ass_split_dialog(s->ass_ctx, ass);
         if (!dialog)
             return AVERROR(ENOMEM);
         mov_text_dialog(s, dialog);
-        ff_ass_split_override_codes(&mov_text_callbacks, s, dialog->text);
-        ff_ass_free_dialog(&dialog);
+        avpriv_ass_split_override_codes(&mov_text_callbacks, s, dialog->text);
+        avpriv_ass_free_dialog(&dialog);
     }
 
     if (s->buffer.len > UINT16_MAX)

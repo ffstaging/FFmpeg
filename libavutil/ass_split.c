@@ -28,7 +28,7 @@
 #include "libavutil/error.h"
 #include "libavutil/macros.h"
 #include "libavutil/mem.h"
-#include "ass_split.h"
+#include "ass_split_internal.h"
 
 typedef enum {
     ASS_STR,
@@ -379,7 +379,7 @@ static int ass_split(ASSSplitContext *ctx, const char *buf)
     return buf ? 0 : AVERROR_INVALIDDATA;
 }
 
-ASSSplitContext *ff_ass_split(const char *buf)
+ASSSplitContext *avpriv_ass_split(const char *buf)
 {
     ASSSplitContext *ctx = av_mallocz(sizeof(*ctx));
     if (!ctx)
@@ -388,7 +388,7 @@ ASSSplitContext *ff_ass_split(const char *buf)
         buf += 3;
     ctx->current_section = -1;
     if (ass_split(ctx, buf) < 0) {
-        ff_ass_split_free(ctx);
+        avpriv_ass_split_free(ctx);
         return NULL;
     }
     return ctx;
@@ -418,7 +418,7 @@ static void free_section(ASSSplitContext *ctx, const ASSSection *section)
         av_freep((uint8_t *)&ctx->ass + section->offset);
 }
 
-void ff_ass_free_dialog(ASSDialog **dialogp)
+void avpriv_ass_free_dialog(ASSDialog **dialogp)
 {
     ASSDialog *dialog = *dialogp;
     if (!dialog)
@@ -430,7 +430,7 @@ void ff_ass_free_dialog(ASSDialog **dialogp)
     av_freep(dialogp);
 }
 
-ASSDialog *ff_ass_split_dialog(ASSSplitContext *ctx, const char *buf)
+ASSDialog *avpriv_ass_split_dialog(ASSSplitContext *ctx, const char *buf)
 {
     int i;
     static const ASSFields fields[] = {
@@ -457,7 +457,7 @@ ASSDialog *ff_ass_split_dialog(ASSSplitContext *ctx, const char *buf)
         buf = skip_space(buf);
         len = last ? strlen(buf) : strcspn(buf, ",");
         if (len >= INT_MAX) {
-            ff_ass_free_dialog(&dialog);
+            avpriv_ass_free_dialog(&dialog);
             return NULL;
         }
         convert_func[type](ptr, buf, len);
@@ -467,7 +467,7 @@ ASSDialog *ff_ass_split_dialog(ASSSplitContext *ctx, const char *buf)
     return dialog;
 }
 
-void ff_ass_split_free(ASSSplitContext *ctx)
+void avpriv_ass_split_free(ASSSplitContext *ctx)
 {
     if (ctx) {
         int i;
@@ -480,7 +480,7 @@ void ff_ass_split_free(ASSSplitContext *ctx)
 }
 
 
-int ff_ass_split_override_codes(const ASSCodesCallbacks *callbacks, void *priv,
+int avpriv_ass_split_override_codes(const ASSCodesCallbacks *callbacks, void *priv,
                                 const char *buf)
 {
     const char *text = NULL;
@@ -503,8 +503,8 @@ int ff_ass_split_override_codes(const ASSCodesCallbacks *callbacks, void *priv,
             while (*buf == '\\') {
                 char style[2], c[2], sep[2], c_num[2] = "0", tmp[128] = {0};
                 unsigned int color = 0xFFFFFFFF;
-                int len, size = -1, an = -1, alpha = -1;
-                int x1, y1, x2, y2, t1 = -1, t2 = -1;
+                int len, size = -1, an = -1, alpha = -1, scale = 0;
+                int x1, y1, x2, y2, t1 = -1, t2 = -1, accel = 1;
                 if (sscanf(buf, "\\%1[bisu]%1[01\\}]%n", style, c, &len) > 1) {
                     int close = c[0] == '0' ? 1 : c[0] == '1' ? 0 : -1;
                     len += close != -1;
@@ -552,6 +552,14 @@ int ff_ass_split_override_codes(const ASSCodesCallbacks *callbacks, void *priv,
                 } else if (sscanf(buf, "\\org(%d,%d)%1[\\}]%n", &x1, &y1, sep, &len) > 2) {
                     if (callbacks->origin)
                         callbacks->origin(priv, x1, y1);
+                } else if (sscanf(buf, "\\t(%d,%d,%1[\\}]%n", &t1, &t2, sep, &len) > 2 ||
+                           sscanf(buf, "\\t(%d,%d,%d,%1[\\}]%n", &t1, &t2, &accel, sep, &len) > 3) {
+                    if (callbacks->animate)
+                        callbacks->animate(priv, t1, t2, accel, tmp);
+                } else if (sscanf(buf, "\\p%1[\\}]%n", sep, &len) > 0 ||
+                           sscanf(buf, "\\p%u%1[\\}]%n", &scale, sep, &len) > 1) {
+                    if (callbacks->drawing_mode)
+                        callbacks->drawing_mode(priv, scale);
                 } else {
                     len = strcspn(buf+1, "\\}") + 2;  /* skip unknown code */
                 }
@@ -575,7 +583,7 @@ int ff_ass_split_override_codes(const ASSCodesCallbacks *callbacks, void *priv,
     return 0;
 }
 
-ASSStyle *ff_ass_style_get(ASSSplitContext *ctx, const char *style)
+ASSStyle *avpriv_ass_style_get(ASSSplitContext *ctx, const char *style)
 {
     ASS *ass = &ctx->ass;
     int i;

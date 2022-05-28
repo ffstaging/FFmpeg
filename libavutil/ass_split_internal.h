@@ -19,8 +19,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVCODEC_ASS_SPLIT_H
-#define AVCODEC_ASS_SPLIT_H
+#ifndef AVUTIL_ASS_SPLIT_INTERNAL_H
+#define AVUTIL_ASS_SPLIT_INTERNAL_H
 
 /**
  * fields extracted from the [Script Info] section
@@ -81,7 +81,7 @@ typedef struct {
     char *effect;
     char *text;     /**< actual text which will be displayed as a subtitle,
                          can include style override control codes (see
-                         ff_ass_split_override_codes()) */
+                         avpriv_ass_split_override_codes()) */
 } ASSDialog;
 
 /**
@@ -107,12 +107,12 @@ typedef struct ASSSplitContext ASSSplitContext;
  * @param buf String containing the ASS formatted data.
  * @return Newly allocated struct containing split data.
  */
-ASSSplitContext *ff_ass_split(const char *buf);
+ASSSplitContext *avpriv_ass_split(const char *buf);
 
 /**
- * Free a dialogue obtained from ff_ass_split_dialog().
+ * Free a dialogue obtained from avpriv_ass_split_dialog().
  */
-void ff_ass_free_dialog(ASSDialog **dialogp);
+void avpriv_ass_free_dialog(ASSDialog **dialogp);
 
 /**
  * Split one ASS Dialogue line from a string buffer.
@@ -121,14 +121,14 @@ void ff_ass_free_dialog(ASSDialog **dialogp);
  * @param buf String containing the ASS "Dialogue" line.
  * @return Pointer to the split ASSDialog. Must be freed with ff_ass_free_dialog()
  */
-ASSDialog *ff_ass_split_dialog(ASSSplitContext *ctx, const char *buf);
+ASSDialog *avpriv_ass_split_dialog(ASSSplitContext *ctx, const char *buf);
 
 /**
  * Free all the memory allocated for an ASSSplitContext.
  *
  * @param ctx Context previously initialized by ff_ass_split().
  */
-void ff_ass_split_free(ASSSplitContext *ctx);
+void avpriv_ass_split_free(ASSSplitContext *ctx);
 
 
 /**
@@ -141,6 +141,7 @@ typedef struct {
      * @{
      */
     void (*text)(void *priv, const char *text, int len);
+    void (*hard_space)(void *priv);
     void (*new_line)(void *priv, int forced);
     void (*style)(void *priv, char style, int close);
     void (*color)(void *priv, unsigned int /* color */, unsigned int color_id);
@@ -156,7 +157,16 @@ typedef struct {
      * @{
      */
     void (*move)(void *priv, int x1, int y1, int x2, int y2, int t1, int t2);
+    void (*animate)(void *priv, int t1, int t2, int accel, char *style);
     void (*origin)(void *priv, int x, int y);
+    void (*drawing_mode)(void *priv, int scale);
+    /** @} */
+
+    /**
+     * @defgroup ass_ext    ASS extensible parsing callback
+     * @{
+     */
+    void (*ext)(void *priv, int ext_id, const char *text, int p1, int p2);
     /** @} */
 
     /**
@@ -176,7 +186,7 @@ typedef struct {
  * @param buf The ASS "Dialogue" Text field to split.
  * @return >= 0 on success otherwise an error code <0
  */
-int ff_ass_split_override_codes(const ASSCodesCallbacks *callbacks, void *priv,
+int avpriv_ass_split_override_codes(const ASSCodesCallbacks *callbacks, void *priv,
                                 const char *buf);
 
 /**
@@ -186,6 +196,6 @@ int ff_ass_split_override_codes(const ASSCodesCallbacks *callbacks, void *priv,
  * @param style name of the style to search for.
  * @return the ASSStyle corresponding to style, or NULL if style can't be found
  */
-ASSStyle *ff_ass_style_get(ASSSplitContext *ctx, const char *style);
+ASSStyle *avpriv_ass_style_get(ASSSplitContext *ctx, const char *style);
 
-#endif /* AVCODEC_ASS_SPLIT_H */
+#endif /* AVUTIL_ASS_SPLIT_INTERNAL_H */

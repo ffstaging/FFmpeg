@@ -143,8 +143,6 @@ int want_sdp = 1;
 static BenchmarkTimeStamps current_time;
 AVIOContext *progress_avio = NULL;
 
-static uint8_t *subtitle_out;
-
 InputStream **input_streams = NULL;
 int        nb_input_streams = 0;
 InputFile   **input_files   = NULL;
@@ -168,163 +166,6 @@ static int restore_tty;
 #if HAVE_THREADS
 static void free_input_threads(void);
 #endif
-
-/* sub2video hack:
-   Convert subtitles to video with alpha to insert them in filter graphs.
-   This is a temporary solution until libavfilter gets real subtitles support.
- */
-
-static int sub2video_get_blank_frame(InputStream *ist)
-{
-    int ret;
-    AVFrame *frame = ist->sub2video.frame;
-
-    av_frame_unref(frame);
-    ist->sub2video.frame->width  = ist->dec_ctx->width  ? ist->dec_ctx->width  : ist->sub2video.w;
-    ist->sub2video.frame->height = ist->dec_ctx->height ? ist->dec_ctx->height : ist->sub2video.h;
-    ist->sub2video.frame->format = AV_PIX_FMT_RGB32;
-    if ((ret = av_frame_get_buffer(frame, 0)) < 0)
-        return ret;
-    memset(frame->data[0], 0, frame->height * frame->linesize[0]);
-    return 0;
-}
-
-static void sub2video_copy_rect(uint8_t *dst, int dst_linesize, int w, int h,
-                                AVSubtitleRect *r)
-{
-    uint32_t *pal, *dst2;
-    uint8_t *src, *src2;
-    int x, y;
-
-    if (r->type != SUBTITLE_BITMAP) {
-        av_log(NULL, AV_LOG_WARNING, "sub2video: non-bitmap subtitle\n");
-        return;
-    }
-    if (r->x < 0 || r->x + r->w > w || r->y < 0 || r->y + r->h > h) {
-        av_log(NULL, AV_LOG_WARNING, "sub2video: rectangle (%d %d %d %d) overflowing %d %d\n",
-            r->x, r->y, r->w, r->h, w, h
-        );
-        return;
-    }
-
-    dst += r->y * dst_linesize + r->x * 4;
-    src = r->data[0];
-    pal = (uint32_t *)r->data[1];
-    for (y = 0; y < r->h; y++) {
-        dst2 = (uint32_t *)dst;
-        src2 = src;
-        for (x = 0; x < r->w; x++)
-            *(dst2++) = pal[*(src2++)];
-        dst += dst_linesize;
-        src += r->linesize[0];
-    }
-}
-
-static void sub2video_push_ref(InputStream *ist, int64_t pts)
-{
-    AVFrame *frame = ist->sub2video.frame;
-    int i;
-    int ret;
-
-    av_assert1(frame->data[0]);
-    ist->sub2video.last_pts = frame->pts = pts;
-    for (i = 0; i < ist->nb_filters; i++) {
-        ret = av_buffersrc_add_frame_flags(ist->filters[i]->filter, frame,
-                                           AV_BUFFERSRC_FLAG_KEEP_REF |
-                                           AV_BUFFERSRC_FLAG_PUSH);
-        if (ret != AVERROR_EOF && ret < 0)
-            av_log(NULL, AV_LOG_WARNING, "Error while add the frame to buffer source(%s).\n",
-                   av_err2str(ret));
-    }
-}
-
-void sub2video_update(InputStream *ist, int64_t heartbeat_pts, AVSubtitle *sub)
-{
-    AVFrame *frame = ist->sub2video.frame;
-    int8_t *dst;
-    int     dst_linesize;
-    int num_rects, i;
-    int64_t pts, end_pts;
-
-    if (!frame)
-        return;
-    if (sub) {
-        pts       = av_rescale_q(sub->pts + sub->start_display_time * 1000LL,
-                                 AV_TIME_BASE_Q, ist->st->time_base);
-        end_pts   = av_rescale_q(sub->pts + sub->end_display_time   * 1000LL,
-                                 AV_TIME_BASE_Q, ist->st->time_base);
-        num_rects = sub->num_rects;
-    } else {
-        /* If we are initializing the system, utilize current heartbeat
-           PTS as the start time, and show until the following subpicture
-           is received. Otherwise, utilize the previous subpicture's end time
-           as the fall-back value. */
-        pts       = ist->sub2video.initialize ?
-                    heartbeat_pts : ist->sub2video.end_pts;
-        end_pts   = INT64_MAX;
-        num_rects = 0;
-    }
-    if (sub2video_get_blank_frame(ist) < 0) {
-        av_log(ist->dec_ctx, AV_LOG_ERROR,
-               "Impossible to get a blank canvas.\n");
-        return;
-    }
-    dst          = frame->data    [0];
-    dst_linesize = frame->linesize[0];
-    for (i = 0; i < num_rects; i++)
-        sub2video_copy_rect(dst, dst_linesize, frame->width, frame->height, sub->rects[i]);
-    sub2video_push_ref(ist, pts);
-    ist->sub2video.end_pts = end_pts;
-    ist->sub2video.initialize = 0;
-}
-
-static void sub2video_heartbeat(InputStream *ist, int64_t pts)
-{
-    InputFile *infile = input_files[ist->file_index];
-    int i, j, nb_reqs;
-    int64_t pts2;
-
-    /* When a frame is read from a file, examine all sub2video streams in
-       the same file and send the sub2video frame again. Otherwise, decoded
-       video frames could be accumulating in the filter graph while a filter
-       (possibly overlay) is desperately waiting for a subtitle frame. */
-    for (i = 0; i < infile->nb_streams; i++) {
-        InputStream *ist2 = input_streams[infile->ist_index + i];
-        if (!ist2->sub2video.frame)
-            continue;
-        /* subtitles seem to be usually muxed ahead of other streams;
-           if not, subtracting a larger time here is necessary */
-        pts2 = av_rescale_q(pts, ist->st->time_base, ist2->st->time_base) - 1;
-        /* do not send the heartbeat frame if the subtitle is already ahead */
-        if (pts2 <= ist2->sub2video.last_pts)
-            continue;
-        if (pts2 >= ist2->sub2video.end_pts || ist2->sub2video.initialize)
-            /* if we have hit the end of the current displayed subpicture,
-               or if we need to initialize the system, update the
-               overlayed subpicture and its start/end times */
-            sub2video_update(ist2, pts2 + 1, NULL);
-        for (j = 0, nb_reqs = 0; j < ist2->nb_filters; j++)
-            nb_reqs += av_buffersrc_get_nb_failed_requests(ist2->filters[j]->filter);
-        if (nb_reqs)
-            sub2video_push_ref(ist2, pts2);
-    }
-}
-
-static void sub2video_flush(InputStream *ist)
-{
-    int i;
-    int ret;
-
-    if (ist->sub2video.end_pts < INT64_MAX)
-        sub2video_update(ist, INT64_MAX, NULL);
-    for (i = 0; i < ist->nb_filters; i++) {
-        ret = av_buffersrc_add_frame(ist->filters[i]->filter, NULL);
-        if (ret != AVERROR_EOF && ret < 0)
-            av_log(NULL, AV_LOG_WARNING, "Flush the frame error.\n");
-    }
-}
-
-/* end of sub2video hack */
 
 static void term_exit_sigsafe(void)
 {
@@ -526,7 +367,6 @@ static void ffmpeg_cleanup(int ret)
         avfilter_graph_free(&fg->graph);
         for (j = 0; j < fg->nb_inputs; j++) {
             InputFilter *ifilter = fg->inputs[j];
-            struct InputStream *ist = ifilter->ist;
 
             if (ifilter->frame_queue) {
                 AVFrame *frame;
@@ -535,12 +375,6 @@ static void ffmpeg_cleanup(int ret)
                 av_fifo_freep2(&ifilter->frame_queue);
             }
             av_freep(&ifilter->displaymatrix);
-            if (ist->sub2video.sub_queue) {
-                AVSubtitle sub;
-                while (av_fifo_read(ist->sub2video.sub_queue, &sub, 1) >= 0)
-                    avsubtitle_free(&sub);
-                av_fifo_freep2(&ist->sub2video.sub_queue);
-            }
             av_buffer_unref(&ifilter->hw_frames_ctx);
             av_freep(&ifilter->name);
             av_freep(&fg->inputs[j]);
@@ -561,7 +395,7 @@ static void ffmpeg_cleanup(int ret)
     }
     av_freep(&filtergraphs);
 
-    av_freep(&subtitle_out);
+    ////av_freep(&subtitle_out);
 
     /* close files */
     for (i = 0; i < nb_output_files; i++)
@@ -614,15 +448,19 @@ static void ffmpeg_cleanup(int ret)
     for (i = 0; i < nb_input_streams; i++) {
         InputStream *ist = input_streams[i];
 
+        if (ist->prev_sub.subtitle == ist->decoded_frame)
+            // Prevent double-free
+            ist->prev_sub.subtitle = NULL;
+
         av_frame_free(&ist->decoded_frame);
         av_packet_free(&ist->pkt);
         av_dict_free(&ist->decoder_opts);
-        avsubtitle_free(&ist->prev_sub.subtitle);
-        av_frame_free(&ist->sub2video.frame);
+        av_frame_free(&ist->prev_sub.subtitle);
         av_freep(&ist->filters);
         av_freep(&ist->hwaccel_device);
         av_freep(&ist->dts_buffer);
 
+        av_buffer_unref(&ist->subtitle_header);
         avcodec_free_context(&ist->dec_ctx);
 
         av_freep(&input_streams[i]);
@@ -992,32 +830,82 @@ static void do_audio_out(OutputFile *of, OutputStream *ost,
         exit_program(1);
 }
 
-static void do_subtitle_out(OutputFile *of,
-                            OutputStream *ost,
-                            AVSubtitle *sub)
+static void encode_subtitle_frame(OutputFile *of, OutputStream *ost, AVFrame *frame, AVPacket *pkt, int64_t pts_offset)
 {
-    int subtitle_out_max_size = 1024 * 1024;
-    int subtitle_out_size, nb, i;
+    AVCodecContext *enc = ost->enc_ctx;
+    int ret;
+
+        ost->frames_encoded++;
+
+        ret = avcodec_send_frame(enc, frame);
+        if (ret < 0)
+            goto error;
+
+        while (1) {
+            ret = avcodec_receive_packet(enc, pkt);
+            update_benchmark("encode_subtitles %d.%d", ost->file_index, ost->index);
+            if (ret == AVERROR(EAGAIN))
+                break;
+            if (ret < 0)
+                goto error;
+
+            if (debug_ts) {
+                av_log(NULL, AV_LOG_INFO, "encoder -> type:subtitles "
+                       "pkt_pts:%s pkt_pts_time:%s pkt_dts:%s pkt_dts_time:%s\n",
+                       av_ts2str(pkt->pts), av_ts2timestr(pkt->pts, &enc->time_base),
+                       av_ts2str(pkt->dts), av_ts2timestr(pkt->dts, &enc->time_base));
+            }
+
+            pkt->pts  = av_rescale_q(frame->subtitle_timing.start_pts, AV_TIME_BASE_Q, ost->mux_timebase);
+            pkt->duration = av_rescale_q(frame->subtitle_timing.duration, AV_TIME_BASE_Q, ost->mux_timebase);
+            pkt->pts += pts_offset;
+
+            pkt->dts = pkt->pts;
+            output_packet(of, pkt, ost, 0);
+        }
+        ost->sync_opts++;
+        ost->frame_number++;
+
+    return;
+error:
+    av_log(NULL, AV_LOG_FATAL, "Subtitle encoding failed - Error code: %d\n", ret);
+    exit_program(1);
+}
+
+static void do_subtitle_out(OutputFile *of, OutputStream *ost, AVFrame *frame)
+{
+    int nb, i;
     AVCodecContext *enc;
     AVPacket *pkt = ost->pkt;
     int64_t pts;
 
-    if (sub->pts == AV_NOPTS_VALUE) {
+    if (!frame)
+        return;
+
+    av_log(NULL, AV_LOG_DEBUG, "do_subtitle_out: sub->pts: %"PRId64"  frame->pts: %"PRId64"\n", frame->subtitle_timing.start_pts, frame->pts);
+
+    if (frame->subtitle_timing.start_pts == AV_NOPTS_VALUE) {
         av_log(NULL, AV_LOG_ERROR, "Subtitle packets must have a pts\n");
         if (exit_on_error)
             exit_program(1);
         return;
     }
 
-    enc = ost->enc_ctx;
-
-    if (!subtitle_out) {
-        subtitle_out = av_malloc(subtitle_out_max_size);
-        if (!subtitle_out) {
-            av_log(NULL, AV_LOG_FATAL, "Failed to allocate subtitle_out\n");
-            exit_program(1);
-        }
+    if (frame->repeat_sub) {
+        av_log(NULL, AV_LOG_WARNING, "Ignoring repeated subtitle frame\n");
+        return;
     }
+
+    ////if (ost->last_subtitle_pts && ost->last_subtitle_pts == frame->subtitle_timing.start_pts) {
+    ////    av_log(NULL, AV_LOG_DEBUG, "Ignoring subtitle frame with duplicate subtitle_pts\n");
+    ////    return;
+    ////}
+
+    ost->last_subtitle_pts = frame->subtitle_timing.start_pts;
+
+    init_output_stream_wrapper(ost, frame, 1);
+
+    enc = ost->enc_ctx;
 
     /* Note: DVB subtitle need one packet to draw them and one other
        packet to clear them */
@@ -1028,50 +916,38 @@ static void do_subtitle_out(OutputFile *of,
         nb = 1;
 
     /* shift timestamp to honor -ss and make check_recording_time() work with -t */
-    pts = sub->pts;
+    pts = frame->subtitle_timing.start_pts;
     if (output_files[ost->file_index]->start_time != AV_NOPTS_VALUE)
         pts -= output_files[ost->file_index]->start_time;
+
+    ost->sync_opts = av_rescale_q(pts, AV_TIME_BASE_Q, enc->time_base);
+    if (!check_recording_time(ost))
+        return;
+
+    frame->subtitle_timing.start_pts = pts;
+
     for (i = 0; i < nb; i++) {
-        unsigned save_num_rects = sub->num_rects;
-
-        ost->sync_opts = av_rescale_q(pts, AV_TIME_BASE_Q, enc->time_base);
-        if (!check_recording_time(ost))
-            return;
-
-        sub->pts = pts;
-        // start_display_time is required to be 0
-        sub->pts               += av_rescale_q(sub->start_display_time, (AVRational){ 1, 1000 }, AV_TIME_BASE_Q);
-        sub->end_display_time  -= sub->start_display_time;
-        sub->start_display_time = 0;
-        if (i == 1)
-            sub->num_rects = 0;
+        const unsigned save_num_rects = frame->num_subtitle_areas;
+        int64_t pts_offset = 0;
 
         ost->frames_encoded++;
 
-        subtitle_out_size = avcodec_encode_subtitle(enc, subtitle_out,
-                                                    subtitle_out_max_size, sub);
         if (i == 1)
-            sub->num_rects = save_num_rects;
-        if (subtitle_out_size < 0) {
-            av_log(NULL, AV_LOG_FATAL, "Subtitle encoding failed\n");
-            exit_program(1);
-        }
+            frame->num_subtitle_areas = 0;
 
-        av_packet_unref(pkt);
-        pkt->data = subtitle_out;
-        pkt->size = subtitle_out_size;
-        pkt->pts  = av_rescale_q(sub->pts, AV_TIME_BASE_Q, ost->mux_timebase);
-        pkt->duration = av_rescale_q(sub->end_display_time, (AVRational){ 1, 1000 }, ost->mux_timebase);
         if (enc->codec_id == AV_CODEC_ID_DVB_SUBTITLE) {
             /* XXX: the pts correction is handled here. Maybe handling
                it in the codec would be better */
             if (i == 0)
-                pkt->pts += av_rescale_q(sub->start_display_time, (AVRational){ 1, 1000 }, ost->mux_timebase);
+                pts_offset = 0;
             else
-                pkt->pts += av_rescale_q(sub->end_display_time, (AVRational){ 1, 1000 }, ost->mux_timebase);
+                pts_offset = av_rescale_q(frame->subtitle_timing.duration, AV_TIME_BASE_Q, ost->mux_timebase);
         }
-        pkt->dts = pkt->pts;
-        output_packet(of, pkt, ost, 0);
+
+        encode_subtitle_frame(of, ost, frame, pkt, pts_offset);
+
+        if (i == 1)
+            frame->num_subtitle_areas = save_num_rects;
     }
 }
 
@@ -1376,8 +1252,26 @@ static int reap_filters(int flush)
                 }
                 do_audio_out(of, ost, filtered_frame);
                 break;
+            case AVMEDIA_TYPE_SUBTITLE:
+
+                if (filtered_frame->format == AV_SUBTITLE_FMT_ASS && !enc->subtitle_header
+                    && filtered_frame->subtitle_header) {
+                    const char *subtitle_header = (char *)filtered_frame->subtitle_header->data;
+                    enc->subtitle_header = (uint8_t *)av_strdup(subtitle_header);
+                    if (!enc->subtitle_header)
+                        return AVERROR(ENOMEM);
+                    enc->subtitle_header_size = strlen(subtitle_header);
+                }
+
+                if ((ost->enc_ctx->width == 0 || ost->enc_ctx->height == 0)
+                    && filter->inputs[0]->w > 0 && filter->inputs[0]->h > 0 ) {
+                    ost->enc_ctx->width = filter->inputs[0]->w;
+                    ost->enc_ctx->height = filter->inputs[0]->h;
+                }
+
+                do_subtitle_out(of, ost, filtered_frame);
+                break;
             default:
-                // TODO support subtitle filters
                 av_assert0(0);
             }
 
@@ -1929,7 +1823,8 @@ static int ifilter_has_all_input_formats(FilterGraph *fg)
     int i;
     for (i = 0; i < fg->nb_inputs; i++) {
         if (fg->inputs[i]->format < 0 && (fg->inputs[i]->type == AVMEDIA_TYPE_AUDIO ||
-                                          fg->inputs[i]->type == AVMEDIA_TYPE_VIDEO))
+                                          fg->inputs[i]->type == AVMEDIA_TYPE_VIDEO ||
+                                          fg->inputs[i]->type == AVMEDIA_TYPE_SUBTITLE))
             return 0;
     }
     return 1;
@@ -1956,6 +1851,18 @@ static int ifilter_send_frame(InputFilter *ifilter, AVFrame *frame, int keep_ref
     case AVMEDIA_TYPE_VIDEO:
         need_reinit |= ifilter->width  != frame->width ||
                        ifilter->height != frame->height;
+
+        if (need_reinit)
+            need_reinit = 1;
+        break;
+    case AVMEDIA_TYPE_SUBTITLE:
+        need_reinit |= ifilter->width  != frame->width ||
+                       ifilter->height != frame->height;
+
+        need_reinit &= (ifilter->width == 0 || ifilter->height == 0);
+
+        if (need_reinit)
+            need_reinit = 1;
         break;
     }
 
@@ -2027,12 +1934,9 @@ static int ifilter_send_eof(InputFilter *ifilter, int64_t pts)
             return ret;
     } else {
         // the filtergraph was never configured
-        if (ifilter->format < 0) {
-            ret = ifilter_parameters_from_codecpar(ifilter, ifilter->ist->st->codecpar);
-            if (ret < 0)
-                return ret;
-        }
-        if (ifilter->format < 0 && (ifilter->type == AVMEDIA_TYPE_AUDIO || ifilter->type == AVMEDIA_TYPE_VIDEO)) {
+        if (ifilter->format < 0)
+            ifilter_parameters_from_codecpar(ifilter, ifilter->ist->st->codecpar);
+        if (ifilter->format < 0 && (ifilter->type == AVMEDIA_TYPE_AUDIO || ifilter->type == AVMEDIA_TYPE_VIDEO || ifilter->type == AVMEDIA_TYPE_SUBTITLE)) {
             av_log(NULL, AV_LOG_ERROR, "Cannot determine format of input stream %d:%d after EOF\n", ifilter->ist->file_index, ifilter->ist->st->index);
             return AVERROR_INVALIDDATA;
         }
@@ -2070,7 +1974,7 @@ static int decode(AVCodecContext *avctx, AVFrame *frame, int *got_frame, AVPacke
 
 static int send_frame_to_filters(InputStream *ist, AVFrame *decoded_frame)
 {
-    int i, ret;
+    int i, ret = 0;
 
     av_assert1(ist->nb_filters > 0); /* ensure ret is initialized */
     for (i = 0; i < ist->nb_filters; i++) {
@@ -2271,79 +2175,200 @@ fail:
     return err < 0 ? err : ret;
 }
 
-static int transcode_subtitles(InputStream *ist, AVPacket *pkt, int *got_output,
+static void subtitle_send_kickoff(InputStream *ist, int64_t heartbeat_pts)
+{
+    AVFrame *frame;
+    int64_t pts;
+
+    frame = av_frame_alloc();
+    if (!frame) {
+        av_log(ist->dec_ctx, AV_LOG_ERROR, "Unable to alloc frame (out of memory).\n");
+        return;
+    }
+
+    frame->type = AVMEDIA_TYPE_SUBTITLE;
+    av_frame_get_buffer2(frame, 0);
+
+    frame->format = (uint16_t)ist->dec_ctx->subtitle_type;
+
+    pts = FFMAX(heartbeat_pts, ist->subtitle_kickoff.last_pts) + av_rescale_q(10, (AVRational){ 1, 1000 }, ist->st->time_base);
+
+    frame->width = ist->subtitle_kickoff.w;
+    frame->height = ist->subtitle_kickoff.h;
+    frame->subtitle_timing.start_pts = av_rescale_q(pts, ist->st->time_base, AV_TIME_BASE_Q);
+    frame->subtitle_timing.duration =  av_rescale_q(10, (AVRational){ 1, 1000 }, AV_TIME_BASE_Q);
+    frame->pts = pts;
+
+    av_log(NULL, AV_LOG_WARNING, "subtitle_kickoff: call subtitle_resend_current %"PRId64" frame->format: %d\n", pts, frame->format);
+
+    ist->subtitle_kickoff.last_pts = pts;
+
+    send_frame_to_filters(ist, frame);
+
+    av_frame_free(&frame);
+}
+
+// Opposed to the earlier "subtitle hearbeat", this is primarily aimed at
+// sending an initial subtitle frame to the filters for propagating the initial
+// timing values and to avoid that too much time is spent on a single "HW" decoder
+// which could overflow its buffer pool otherwise
+static void subtitle_kickoff(InputStream *ist, int64_t pts)
+{
+    int i;
+    int64_t pts2;
+    int64_t diff;
+
+    if (ist->st->codecpar->codec_type != AVMEDIA_TYPE_VIDEO)
+        return;
+
+    for (i = 0; i < nb_input_streams; i++) {
+        InputStream *ist2 = input_streams[i];
+        unsigned j, nb_reqs;
+
+        if (!ist2->subtitle_kickoff.is_active)
+            continue;
+        /* It's primarily the initial send that matters and which propagates
+         * the right start times to subtitle filters depending on input from decoding */
+        diff = av_rescale_q(5000, (AVRational){ 1, 1000 }, ist2->st->time_base);
+        pts2 = av_rescale_q(pts, ist->st->time_base, ist2->st->time_base);
+
+        /* do not send a kickoff frame if the subtitle is already ahead */
+        if (pts2 - diff <= ist2->subtitle_kickoff.last_pts)
+            continue;
+
+        for (j = 0, nb_reqs = 0; j < ist2->nb_filters; j++) {
+            if (ist2->filters[j]->filter == NULL) {
+                subtitle_send_kickoff(ist2, pts2);
+                return;
+            }
+            nb_reqs += av_buffersrc_get_nb_failed_requests(ist2->filters[j]->filter);
+        }
+        if (nb_reqs) {
+            av_log(NULL, AV_LOG_WARNING, "subtitle_kickoff: resend - pts: %"PRIi64"\n", pts2);
+            subtitle_send_kickoff(ist2, pts2);
+        }
+    }
+}
+
+static InputStream *get_input_stream(OutputStream *ost)
+{
+    if (ost->source_index >= 0)
+        return input_streams[ost->source_index];
+    return NULL;
+}
+
+static int decode_subtitles(InputStream *ist, AVPacket *pkt, int *got_output,
                                int *decode_failed)
 {
-    AVSubtitle subtitle;
-    int free_sub = 1;
-    int i, ret = avcodec_decode_subtitle2(ist->dec_ctx,
-                                          &subtitle, got_output, pkt);
+    AVFrame *decoded_frame;
+    AVCodecContext *avctx = ist->dec_ctx;
+    int i = 0, ret = 0, err = 0;
+    int64_t pts;
 
-    check_decode_result(NULL, got_output, ret);
+    if (!ist->decoded_frame && !((ist->decoded_frame = av_frame_alloc())))
+        return AVERROR(ENOMEM);
+    decoded_frame = ist->decoded_frame;
+    decoded_frame->type = AVMEDIA_TYPE_SUBTITLE;
+    decoded_frame->format = (uint16_t)avctx->subtitle_type;
+
+    if (!ist->subtitle_header && avctx->subtitle_header && avctx->subtitle_header_size > 0) {
+        ist->subtitle_header = av_buffer_allocz(avctx->subtitle_header_size + 1);
+        if (!ist->subtitle_header)
+            return AVERROR(ENOMEM);
+        memcpy(ist->subtitle_header->data, avctx->subtitle_header, avctx->subtitle_header_size);
+    }
+
+    ret = decode(avctx, decoded_frame, got_output, pkt);
+
+    if (ret != AVERROR_EOF)
+        check_decode_result(NULL, got_output, ret);
 
     if (ret < 0 || !*got_output) {
         *decode_failed = 1;
-        if (!pkt->size)
-            sub2video_flush(ist);
+        if (!pkt->size) {
+            // Flush
+            for (i = 0; i < ist->nb_filters; i++) {
+                if (ist->filters[i]->filter != NULL) {
+                    ret = av_buffersrc_add_frame(ist->filters[i]->filter, NULL);
+                    if (ret != AVERROR_EOF && ret < 0)
+                        av_log(NULL, AV_LOG_WARNING, "Flush the frame error.\n");
+                }
+            }
+        }
         return ret;
     }
 
     if (ist->fix_sub_duration) {
-        int end = 1;
-        if (ist->prev_sub.got_output) {
-            end = av_rescale(subtitle.pts - ist->prev_sub.subtitle.pts,
-                             1000, AV_TIME_BASE);
-            if (end < ist->prev_sub.subtitle.end_display_time) {
-                av_log(ist->dec_ctx, AV_LOG_DEBUG,
-                       "Subtitle duration reduced from %"PRId32" to %d%s\n",
-                       ist->prev_sub.subtitle.end_display_time, end,
-                       end <= 0 ? ", dropping it" : "");
-                ist->prev_sub.subtitle.end_display_time = end;
+        int64_t end = 1;
+        if (ist->prev_sub.got_output && ist->prev_sub.subtitle) {
+
+            const int64_t duration = ist->prev_sub.subtitle->subtitle_timing.duration;
+            end = decoded_frame->subtitle_timing.start_pts - ist->prev_sub.subtitle->subtitle_timing.start_pts;
+
+            if (end < duration) {
+                av_log(avctx, AV_LOG_DEBUG, "Subtitle duration reduced from %"PRId64" to %"PRId64"%s\n",
+                    duration, end, end <= 0 ? ", dropping it" : "");
+                ist->prev_sub.subtitle->subtitle_timing.duration = end;
             }
         }
-        FFSWAP(int,        *got_output, ist->prev_sub.got_output);
-        FFSWAP(int,        ret,         ist->prev_sub.ret);
-        FFSWAP(AVSubtitle, subtitle,    ist->prev_sub.subtitle);
+        FFSWAP(int,        *got_output,        ist->prev_sub.got_output);
+        FFSWAP(int,        ret,                ist->prev_sub.ret);
+        FFSWAP(AVFrame*,   ist->decoded_frame, ist->prev_sub.subtitle);
+        decoded_frame = ist->decoded_frame;
         if (end <= 0)
-            goto out;
+            return (int)end;
     }
 
-    if (!*got_output)
+    if (!*got_output || !decoded_frame)
         return ret;
 
-    if (ist->sub2video.frame) {
-        sub2video_update(ist, INT64_MIN, &subtitle);
-    } else if (ist->nb_filters) {
-        if (!ist->sub2video.sub_queue)
-            ist->sub2video.sub_queue = av_fifo_alloc2(8, sizeof(AVSubtitle), AV_FIFO_FLAG_AUTO_GROW);
-        if (!ist->sub2video.sub_queue)
-            exit_program(1);
+    decoded_frame->type = AVMEDIA_TYPE_SUBTITLE;
 
-        ret = av_fifo_write(ist->sub2video.sub_queue, &subtitle, 1);
-        if (ret < 0)
-            exit_program(1);
-        free_sub = 0;
+    if (decoded_frame->format == AV_SUBTITLE_FMT_UNKNOWN)
+        decoded_frame->format = (uint16_t)avctx->subtitle_type;
+
+    if ((ret = av_buffer_replace(&decoded_frame->subtitle_header, ist->subtitle_header)) < 0)
+        return ret;
+
+    decoded_frame->pts = av_rescale_q(decoded_frame->subtitle_timing.start_pts, AV_TIME_BASE_Q, ist->st->time_base);
+
+    pts     = av_rescale_q(decoded_frame->subtitle_timing.start_pts,
+                           AV_TIME_BASE_Q, ist->st->time_base);
+
+    ist->subtitle_kickoff.last_pts = decoded_frame->pts = pts;
+
+    if (ist->nb_filters > 0) {
+        AVFrame *filter_frame = av_frame_clone(decoded_frame);
+        if (!filter_frame) {
+            err = AVERROR(ENOMEM);
+            goto end;
+        }
+
+        err = send_frame_to_filters(ist, filter_frame);
+        av_frame_free(&filter_frame);
     }
 
-    if (!subtitle.num_rects)
-        goto out;
+    if (err >= 0) {
+        for (i = 0; i < nb_output_streams; i++) {
+            OutputStream *ost = output_streams[i];
+            InputStream *ist_src = get_input_stream(ost);
 
-    ist->frames_decoded++;
+            if (!ist_src || !check_output_constraints(ist, ost)
+                || ist_src != ist
+                || !ost->encoding_needed
+                || ost->enc->type != AVMEDIA_TYPE_SUBTITLE)
+                continue;
 
-    for (i = 0; i < nb_output_streams; i++) {
-        OutputStream *ost = output_streams[i];
+            if (ost->filter && ost->filter->filter->nb_inputs > 0)
+                continue;
 
-        if (!check_output_constraints(ist, ost) || !ost->encoding_needed
-            || ost->enc->type != AVMEDIA_TYPE_SUBTITLE)
-            continue;
-
-        do_subtitle_out(output_files[ost->file_index], ost, &subtitle);
+            do_subtitle_out(output_files[ost->file_index], ost, decoded_frame);
+        }
     }
 
-out:
-    if (free_sub)
-        avsubtitle_free(&subtitle);
-    return ret;
+end:
+    av_frame_unref(decoded_frame);
+    return err < 0 ? err : ret;
 }
 
 static int send_filter_eof(InputStream *ist)
@@ -2447,7 +2472,7 @@ static int process_input_packet(InputStream *ist, const AVPacket *pkt, int no_eo
         case AVMEDIA_TYPE_SUBTITLE:
             if (repeating)
                 break;
-            ret = transcode_subtitles(ist, avpkt, &got_output, &decode_failed);
+            ret = decode_subtitles(ist, avpkt, &got_output, &decode_failed);
             if (!pkt && ret >= 0)
                 ret = AVERROR_EOF;
             av_packet_unref(avpkt);
@@ -2662,13 +2687,6 @@ static int init_input_stream(int ist_index, char *error, int error_len)
     ist->next_dts = AV_NOPTS_VALUE;
 
     return 0;
-}
-
-static InputStream *get_input_stream(OutputStream *ost)
-{
-    if (ost->source_index >= 0)
-        return input_streams[ost->source_index];
-    return NULL;
 }
 
 static int compare_int64(const void *a, const void *b)
@@ -3097,7 +3115,7 @@ static int init_output_stream_encode(OutputStream *ost, AVFrame *frame)
         break;
     case AVMEDIA_TYPE_SUBTITLE:
         enc_ctx->time_base = AV_TIME_BASE_Q;
-        if (!enc_ctx->width) {
+        if (!enc_ctx->width && ost->source_index >= 0) {
             enc_ctx->width     = input_streams[ost->source_index]->st->codecpar->width;
             enc_ctx->height    = input_streams[ost->source_index]->st->codecpar->height;
         }
@@ -3112,6 +3130,17 @@ static int init_output_stream_encode(OutputStream *ost, AVFrame *frame)
     ost->mux_timebase = enc_ctx->time_base;
 
     return 0;
+}
+
+static enum AVSubtitleType get_subtitle_format(const AVCodecDescriptor *codec_descriptor)
+{
+    if(codec_descriptor->props & AV_CODEC_PROP_BITMAP_SUB)
+        return AV_SUBTITLE_FMT_BITMAP;
+
+    if(codec_descriptor->props & AV_CODEC_PROP_TEXT_SUB)
+        return AV_SUBTITLE_FMT_ASS;
+
+    return AV_SUBTITLE_FMT_UNKNOWN;
 }
 
 static int init_output_stream(OutputStream *ost, AVFrame *frame,
@@ -3150,19 +3179,13 @@ static int init_output_stream(OutputStream *ost, AVFrame *frame,
         }
 
         if (ist && ist->dec->type == AVMEDIA_TYPE_SUBTITLE && ost->enc->type == AVMEDIA_TYPE_SUBTITLE) {
-            int input_props = 0, output_props = 0;
-            AVCodecDescriptor const *input_descriptor =
-                avcodec_descriptor_get(dec->codec_id);
-            AVCodecDescriptor const *output_descriptor =
-                avcodec_descriptor_get(ost->enc_ctx->codec_id);
-            if (input_descriptor)
-                input_props = input_descriptor->props & (AV_CODEC_PROP_TEXT_SUB | AV_CODEC_PROP_BITMAP_SUB);
-            if (output_descriptor)
-                output_props = output_descriptor->props & (AV_CODEC_PROP_TEXT_SUB | AV_CODEC_PROP_BITMAP_SUB);
-            if (input_props && output_props && input_props != output_props) {
-                snprintf(error, error_len,
-                         "Subtitle encoding currently only possible from text to text "
-                         "or bitmap to bitmap");
+            AVCodecDescriptor const *output_descriptor    = avcodec_descriptor_get(ost->enc_ctx->codec_id);
+            const enum AVSubtitleType in_subtitle_format  = (uint16_t)dec->subtitle_type;
+            const enum AVSubtitleType out_subtitle_format = output_descriptor ? get_subtitle_format(output_descriptor) : AV_SUBTITLE_FMT_UNKNOWN;
+
+            if (ist->nb_filters == 0 && in_subtitle_format != AV_SUBTITLE_FMT_UNKNOWN && out_subtitle_format != AV_SUBTITLE_FMT_UNKNOWN
+                && in_subtitle_format != out_subtitle_format) {
+                snprintf(error, error_len, "Subtitle encoding is only possible from text to text or bitmap to bitmap");
                 return AVERROR_INVALIDDATA;
             }
         }
@@ -3497,7 +3520,7 @@ static OutputStream *choose_output(void)
                        av_rescale_q(ost->last_mux_dts, ost->st->time_base,
                                     AV_TIME_BASE_Q);
         if (ost->last_mux_dts == AV_NOPTS_VALUE)
-            av_log(NULL, AV_LOG_DEBUG,
+            av_log(NULL, AV_LOG_INFO,
                 "cur_dts is invalid st:%d (%d) [init:%d i_done:%d finish:%d] (this is harmless if it occurs once at the start per stream)\n",
                 ost->st->index, ost->st->id, ost->initialized, ost->inputs_done, ost->finished);
 
@@ -4166,7 +4189,7 @@ static int process_input(int file_index)
                av_ts2timestr(input_files[ist->file_index]->ts_offset, &AV_TIME_BASE_Q));
     }
 
-    sub2video_heartbeat(ist, pkt->pts);
+    subtitle_kickoff(ist, pkt->pts);
 
     process_input_packet(ist, pkt, 0);
 
@@ -4378,6 +4401,7 @@ static int transcode(void)
     /* at the end of stream, we must flush the decoder buffers */
     for (i = 0; i < nb_input_streams; i++) {
         ist = input_streams[i];
+        ist->subtitle_kickoff.is_active = 0;
         if (!input_files[ist->file_index]->eof_reached) {
             process_input_packet(ist, NULL, 0);
         }

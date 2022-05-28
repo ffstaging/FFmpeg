@@ -978,6 +978,7 @@ static void add_input_streams(OptionsContext *o, AVFormatContext *ic)
                 av_log(NULL, AV_LOG_FATAL, "Invalid canvas size: %s.\n", canvas_size);
                 exit_program(1);
             }
+            ist->subtitle_kickoff.is_active = 1;
             break;
         }
         case AVMEDIA_TYPE_ATTACHMENT:
@@ -2243,8 +2244,9 @@ static void init_output_filter(OutputFilter *ofilter, OptionsContext *o,
     switch (ofilter->type) {
     case AVMEDIA_TYPE_VIDEO: ost = new_video_stream(o, oc, -1); break;
     case AVMEDIA_TYPE_AUDIO: ost = new_audio_stream(o, oc, -1); break;
+    case AVMEDIA_TYPE_SUBTITLE: ost = new_subtitle_stream(o, oc, -1); break;
     default:
-        av_log(NULL, AV_LOG_FATAL, "Only video and audio filters are supported "
+        av_log(NULL, AV_LOG_FATAL, "Only video, audio and subtitle filters are supported "
                "currently.\n");
         exit_program(1);
     }

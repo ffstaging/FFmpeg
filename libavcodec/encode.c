@@ -143,17 +143,70 @@ fail:
     return ret;
 }
 
-int avcodec_encode_subtitle(AVCodecContext *avctx, uint8_t *buf, int buf_size,
-                            const AVSubtitle *sub)
+int avcodec_encode_subtitle(AVCodecContext *avctx, uint8_t *buf, int buf_size, const AVSubtitle *sub)
 {
-    int ret;
+    int ret = 0;
+    AVFrame *frame = NULL;
+    AVPacket* avpkt = NULL;
+
     if (sub->start_display_time) {
         av_log(avctx, AV_LOG_ERROR, "start_display_time must be 0.\n");
         return -1;
     }
 
-    ret = ffcodec(avctx->codec)->cb.encode_sub(avctx, buf, buf_size, sub);
+    memset(buf, 0, buf_size);
+    // Create a temporary frame for calling the regular api:
+    frame = av_frame_alloc();
+    if (!frame) {
+        ret = AVERROR(ENOMEM);
+        goto exit;
+    }
+
+    frame->format = sub->format;
+    frame->type = AVMEDIA_TYPE_SUBTITLE;
+    ret = av_frame_get_buffer2(frame, 0);
+    if (ret < 0)
+        goto exit;
+
+    // Create a temporary packet
+    avpkt = av_packet_alloc();
+    if (!avpkt) {
+        ret = AVERROR(ENOMEM);
+        goto exit;
+    }
+
+    // Copy legacy subtitle data to temp frame
+    ret = ff_frame_put_subtitle(frame, sub);
+    if (ret < 0)
+        goto exit;
+
+    ret = avcodec_send_frame(avctx, frame);
+    if (ret < 0)
+        goto exit;
+
+    ret = avcodec_receive_packet(avctx, avpkt);
+
+    if (ret < 0 && ret != AVERROR(EAGAIN))
+        goto exit;
+
+    //ret = avctx->codec->encode2(avctx, avpkt, frame, &got_packet);
+
     avctx->frame_number++;
+
+    if (avpkt->size) {
+        if (avpkt->size > buf_size) {
+            ret = AVERROR_BUFFER_TOO_SMALL;
+            goto exit;
+        }
+
+        memcpy(buf, avpkt->data, avpkt->size);
+        ret = avpkt->size;
+    }
+
+exit:
+
+    av_packet_free(&avpkt);
+    av_frame_free(&frame);
     return ret;
 }
 

@@ -33,11 +33,17 @@
 #include "libavutil/bprint.h"
 #include "libavutil/internal.h"
 #include "libavutil/ass_split_internal.h"
+#include "libavutil/ass_internal.h"
 #include "ttmlenc.h"
+
+#include "encode.h"
+
 
 typedef struct {
     AVCodecContext *avctx;
     ASSSplitContext *ass_ctx;
+    int is_default_ass_context;
+    int extradata_written;
     AVBPrint buffer;
 } TTMLContext;
 
@@ -76,27 +82,74 @@ static const ASSCodesCallbacks ttml_callbacks = {
     .new_line         = ttml_new_line_cb,
 };
 
-static int ttml_encode_frame(AVCodecContext *avctx, uint8_t *buf,
-                             int bufsize, const AVSubtitle *sub)
+static int ttml_write_header_content(AVCodecContext* avctx);
+
+static void ensure_ass_context(AVCodecContext* avctx, const AVFrame* frame)
+{
+    TTMLContext* s = avctx->priv_data;
+    int ret;
+
+    if (s->ass_ctx && !s->is_default_ass_context)
+        // We already have a (non-default context)
+        return;
+
+    if (!frame->num_subtitle_areas)
+        // Don't need ass context for processing empty subtitle frames
+        return;
+
+    // The frame has content, so we need to set up a context
+    if (frame->subtitle_header && frame->subtitle_header->size > 0) {
+        const char* subtitle_header = (char*)frame->subtitle_header->data;
+        avpriv_ass_split_free(s->ass_ctx);
+        s->ass_ctx = avpriv_ass_split(subtitle_header);
+        s->is_default_ass_context = 0;
+    }
+    else if (!s->ass_ctx) {
+        char* subtitle_header = avpriv_ass_get_subtitle_header_default(0);
+        if (!subtitle_header)
+            return;
+
+        s->ass_ctx = avpriv_ass_split(subtitle_header);
+        s->is_default_ass_context = 1;
+        av_free(subtitle_header);
+    }
+
+    if (s->ass_ctx && !s->extradata_written) {
+        s->extradata_written = 1;
+        if ((ret = ttml_write_header_content(avctx)) < 0) {
+            av_log(avctx, AV_LOG_ERROR, "Error writing header content.\n");
+        }
+    }
+}
+
+static int ttml_encode_frame(AVCodecContext* avctx, AVPacket* avpkt,
+                             const AVFrame* frame, int* got_packet)
 {
     TTMLContext *s = avctx->priv_data;
     ASSDialog *dialog;
-    int i;
+    int i, ret;
+
+    ensure_ass_context(avctx, frame);
 
     av_bprint_clear(&s->buffer);
 
-    for (i=0; i<sub->num_rects; i++) {
-        const char *ass = sub->rects[i]->ass;
-        int ret;
+    for (i=0; i< frame->num_subtitle_areas; i++) {
+        const char *ass = frame->subtitle_areas[i]->ass;
 
-        if (sub->rects[i]->type != SUBTITLE_ASS) {
-            av_log(avctx, AV_LOG_ERROR, "Only SUBTITLE_ASS type supported.\n");
+        if (frame->subtitle_areas[i]->type != AV_SUBTITLE_FMT_ASS) {
+            av_log(avctx, AV_LOG_ERROR, "Only AV_SUBTITLE_FMT_ASS type supported.\n");
             return AVERROR(EINVAL);
         }
+
+        if (!ass)
+            continue;
 
         dialog = avpriv_ass_split_dialog(s->ass_ctx, ass);
         if (!dialog)
             return AVERROR(ENOMEM);
+
+        if (i > 0)
+            ttml_new_line_cb(s, 0);
 
         if (dialog->style) {
             av_bprintf(&s->buffer, "<span region=\"");
@@ -130,17 +183,19 @@ static int ttml_encode_frame(AVCodecContext *avctx, uint8_t *buf,
 
     if (!av_bprint_is_complete(&s->buffer))
         return AVERROR(ENOMEM);
-    if (!s->buffer.len)
-        return 0;
 
-    // force null-termination, so in case our destination buffer is
-    // too small, the return value is larger than bufsize minus null.
-    if (av_strlcpy(buf, s->buffer.str, bufsize) > bufsize - 1) {
-        av_log(avctx, AV_LOG_ERROR, "Buffer too small for TTML event.\n");
-        return AVERROR_BUFFER_TOO_SMALL;
+    ret = ff_get_encode_buffer(avctx, avpkt, s->buffer.len + 3, 0);
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
+        return ret;
     }
 
-    return s->buffer.len;
+    av_strlcpy(avpkt->data, s->buffer.str, avpkt->size);
+
+    avpkt->size = s->buffer.len;
+    *got_packet = 1;
+
+    return 0;
 }
 
 static av_cold int ttml_encode_close(AVCodecContext *avctx)
@@ -370,13 +425,13 @@ static av_cold int ttml_encode_init(AVCodecContext *avctx)
     s->avctx   = avctx;
 
     av_bprint_init(&s->buffer, 0, AV_BPRINT_SIZE_UNLIMITED);
+    s->ass_ctx = avpriv_ass_split((char*)avctx->subtitle_header);
 
-    if (!(s->ass_ctx = avpriv_ass_split(avctx->subtitle_header))) {
-        return AVERROR_INVALIDDATA;
-    }
+    if (s->ass_ctx) {
+        if (ret = ttml_write_header_content(avctx) < 0)
+            return ret;
 
-    if ((ret = ttml_write_header_content(avctx)) < 0) {
-        return ret;
+        s->extradata_written = 1;
     }
 
     return 0;
@@ -389,7 +444,7 @@ const FFCodec ff_ttml_encoder = {
     .p.id           = AV_CODEC_ID_TTML,
     .priv_data_size = sizeof(TTMLContext),
     .init           = ttml_encode_init,
-    FF_CODEC_ENCODE_SUB_CB(ttml_encode_frame),
+    FF_CODEC_ENCODE_CB(ttml_encode_frame),
     .close          = ttml_encode_close,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };

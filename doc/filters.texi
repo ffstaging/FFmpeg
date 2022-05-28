@@ -26990,6 +26990,124 @@ tools.
 
 @c man end VIDEO SINKS
 
+@chapter Subtitle Filters
+@c man begin SUBTITLE FILTERS
+
+When you configure your FFmpeg build, you can disable any of the
+existing filters using @code{--disable-filters}.
+
+Below is a description of the currently available subtitle filters.
+
+@section graphicsub2video
+
+Renders graphic subtitles as video frames.
+
+This filter replaces the previous "sub2video" hack which did the conversion implicitly and up-front as subtitle filtering wasn't possible at that time.
+To retain compatibility with earlier sub2video command lines, this filter is being auto-inserted in those cases.
+
+For overlaying graphicsal subtitles it is recommended to use the 'overlaygraphicsubs' filter which is more efficient and takes less processing resources.
+
+This filter is still useful in cases where the overlay is done with hardware acceleration (e.g. overlay_qsv, overlay_vaapi, overlay_cuda) for preparing the overlay frames.
+
+Inputs:
+@itemize
+@item 0: Subtitles [BITMAP]
+@end itemize
+
+Outputs:
+@itemize
+@item 0: Video [RGB32]
+@end itemize
+
+
+It accepts the following parameters:
+
+@table @option
+@item size, s
+Set the size of the output video frame.
+
+@end table
+
+@subsection Examples
+
+@itemize
+@item
+Overlay PGS subtitles
+(not recommended - better use overlaygraphicsubs)
+@example
+ffmpeg -i "https://streams.videolan.org/samples/sub/PGS/Girl_With_The_Dragon_Tattoo_2%3A23%3A56.mkv" -filter_complex "[0:1]graphicsub2video[subs];[0:0][subs]overlay" output.mp4
+@end example
+
+@item
+Overlay PGS subtitles implicitly
+The graphicsub2video is inserted automatically for compatibility with legacy command lines.
+@example
+ffmpeg -i "https://streams.videolan.org/samples/sub/PGS/Girl_With_The_Dragon_Tattoo_2%3A23%3A56.mkv" -filter_complex "[0:0][0:1]overlay" output.mp4
+@end example
+@end itemize
+
+@section overlaygraphicsubs
+
+Overlay graphic subtitles onto a video stream.
+
+This filter can blend graphical subtitles on a video stream directly, i.e. without creating full-size alpha images first.
+The blending operation is limited to the area of the subtitle rectangles, which also means that no processing is done at times where no subtitles are to be displayed.
+
+Inputs:
+@itemize
+@item 0: Video [YUV420P, YUV422P, YUV444P, ARGB, RGBA, ABGR, BGRA, RGB24, BGR24]
+@item 1: Subtitles [BITMAP]
+@end itemize
+
+Outputs:
+@itemize
+@item 0: Video (same as input)
+@end itemize
+
+It accepts the following parameters:
+
+@table @option
+@item x
+@item y
+Set the expression for the x and y coordinates of the overlaid video
+on the main video. Default value is "0" for both expressions. In case
+the expression is invalid, it is set to a huge value (meaning that the
+overlay will not be displayed within the output visible area).
+
+@item eof_action
+See @ref{framesync}.
+
+@item eval
+Set when the expressions for @option{x}, and @option{y} are evaluated.
+
+It accepts the following values:
+@table @samp
+@item init
+only evaluate expressions once during the filter initialization or
+when a command is processed
+
+@item frame
+evaluate expressions for each incoming frame
+@end table
+
+Default value is @samp{frame}.
+
+@item shortest
+See @ref{framesync}.
+
+@end table
+
+@subsection Examples
+
+@itemize
+@item
+Overlay PGS subtitles
+@example
+ffmpeg -i "https://streams.videolan.org/samples/sub/PGS/Girl_With_The_Dragon_Tattoo_2%3A23%3A56.mkv" -filter_complex "[0:0][0:1]overlaygraphicsubs" output.mp4
+@end example
+@end itemize
+@c man end SUBTITLE FILTERS
+
 @chapter Multimedia Filters
 @c man begin MULTIMEDIA FILTERS
 

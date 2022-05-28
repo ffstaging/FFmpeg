@@ -575,6 +575,7 @@ extern const AVFilter ff_sf_graphicsub2text;
 extern const AVFilter ff_sf_showspeaker;
 extern const AVFilter ff_sf_splitcc;
 extern const AVFilter ff_sf_stripstyles;
+extern const AVFilter ff_sf_subscale;
 extern const AVFilter ff_sf_textmod;
 
 /* those filters are part of public or internal API,

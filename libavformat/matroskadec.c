@@ -806,7 +806,6 @@ static const CodecMime mkv_image_mime_tags[] = {
 };
 
 static const CodecMime mkv_mime_tags[] = {
-    {"text/plain"                 , AV_CODEC_ID_TEXT},
     {"application/x-truetype-font", AV_CODEC_ID_TTF},
     {"application/x-font"         , AV_CODEC_ID_TTF},
     {"application/vnd.ms-opentype", AV_CODEC_ID_OTF},
@@ -3700,6 +3699,8 @@ static int matroska_parse_block(MatroskaDemuxContext *matroska, AVBufferRef *buf
     int n, flags, laces = 0;
     uint64_t num;
     int trust_default_duration;
+
+    av_assert1(buf);
 
     ffio_init_context(&pb, data, size, 0, NULL, NULL, NULL, NULL);
 

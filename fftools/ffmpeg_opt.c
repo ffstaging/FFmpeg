@@ -1000,6 +1000,7 @@ static void add_input_streams(OptionsContext *o, AVFormatContext *ic)
                 av_log(NULL, AV_LOG_FATAL, "Invalid canvas size: %s.\n", canvas_size);
                 exit_program(1);
             }
+            ist->subtitle_kickoff.is_active = 1;
             break;
         }
         case AVMEDIA_TYPE_ATTACHMENT:
@@ -1715,11 +1716,15 @@ static char *get_ost_filters(OptionsContext *o, AVFormatContext *oc,
 
     if (ost->filters_script)
         return read_file(ost->filters_script);
-    else if (ost->filters)
+    if (ost->filters)
         return av_strdup(ost->filters);
 
-    return av_strdup(st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO ?
-                     "null" : "anull");
+    switch (st->codecpar->codec_type) {
+    case AVMEDIA_TYPE_VIDEO: return av_strdup("null");
+    case AVMEDIA_TYPE_AUDIO: return av_strdup("anull");
+    case AVMEDIA_TYPE_SUBTITLE: return av_strdup("snull");
+    default: av_assert0(0); return NULL;
+    }
 }
 
 static void check_streamcopy_filters(OptionsContext *o, AVFormatContext *oc,
@@ -2120,6 +2125,9 @@ static OutputStream *new_subtitle_stream(OptionsContext *o, AVFormatContext *oc,
 
     subtitle_enc->codec_type = AVMEDIA_TYPE_SUBTITLE;
 
+    MATCH_PER_STREAM_OPT(filter_scripts, str, ost->filters_script, oc, st);
+    MATCH_PER_STREAM_OPT(filters,        str, ost->filters,        oc, st);
+
     if (!ost->stream_copy) {
         char *frame_size = NULL;
 
@@ -2128,6 +2136,10 @@ static OutputStream *new_subtitle_stream(OptionsContext *o, AVFormatContext *oc,
             av_log(NULL, AV_LOG_FATAL, "Invalid frame size: %s.\n", frame_size);
             exit_program(1);
         }
+
+        ost->avfilter = get_ost_filters(o, oc, ost);
+        if (!ost->avfilter)
+            exit_program(1);
     }
 
     return ost;
@@ -2273,8 +2285,9 @@ static void init_output_filter(OutputFilter *ofilter, OptionsContext *o,
     switch (ofilter->type) {
     case AVMEDIA_TYPE_VIDEO: ost = new_video_stream(o, oc, -1); break;
     case AVMEDIA_TYPE_AUDIO: ost = new_audio_stream(o, oc, -1); break;
+    case AVMEDIA_TYPE_SUBTITLE: ost = new_subtitle_stream(o, oc, -1); break;
     default:
-        av_log(NULL, AV_LOG_FATAL, "Only video and audio filters are supported "
+        av_log(NULL, AV_LOG_FATAL, "Only video, audio and subtitle filters are supported "
                "currently.\n");
         exit_program(1);
     }
@@ -2679,7 +2692,8 @@ loop_end:
             ist->processing_needed = 1;
 
             if (ost->st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO ||
-                ost->st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+                ost->st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO ||
+                ost->st->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) {
                 err = init_simple_filtergraph(ist, ost);
                 if (err < 0) {
                     av_log(NULL, AV_LOG_ERROR,
@@ -2724,6 +2738,10 @@ loop_end:
                 } else if (ost->enc->ch_layouts) {
                     f->ch_layouts = ost->enc->ch_layouts;
                 }
+                break;
+            case AVMEDIA_TYPE_SUBTITLE:
+                f->format     = ost->enc_ctx->subtitle_type;
+
                 break;
             }
         }

@@ -571,6 +571,7 @@ extern const AVFilter ff_avsrc_movie;
 
 /* subtitle filters */
 extern const AVFilter ff_sf_censor;
+extern const AVFilter ff_sf_graphicsub2text;
 extern const AVFilter ff_sf_showspeaker;
 extern const AVFilter ff_sf_splitcc;
 extern const AVFilter ff_sf_stripstyles;

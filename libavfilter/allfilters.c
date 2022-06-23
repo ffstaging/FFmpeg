@@ -572,6 +572,7 @@ extern const AVFilter ff_avsrc_movie;
 /* subtitle filters */
 extern const AVFilter ff_sf_censor;
 extern const AVFilter ff_sf_showspeaker;
+extern const AVFilter ff_sf_stripstyles;
 extern const AVFilter ff_sf_textmod;
 
 /* those filters are part of public or internal API,

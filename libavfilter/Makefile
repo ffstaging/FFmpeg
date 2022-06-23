@@ -585,6 +585,7 @@ OBJS-$(CONFIG_SPLITCC_FILTER)                += sf_splitcc.o
 OBJS-$(CONFIG_STRIPSTYLES_FILTER)            += sf_stripstyles.o
 OBJS-$(CONFIG_SUBFEED_FILTER)                += sf_subfeed.o
 OBJS-$(CONFIG_SUBSCALE_FILTER)               += sf_subscale.o
+OBJS-$(CONFIG_TEXT2GRAPHICSUB_FILTER)        += sf_text2graphicsub.o
 OBJS-$(CONFIG_TEXTMOD_FILTER)                += sf_textmod.o
 
 # multimedia filters

@@ -27744,6 +27744,57 @@ ffmpeg -y -y -loglevel verbose -i "https://streams.videolan.org/samples/sub/larg
 @end example
 @end itemize
 
+@section text2graphicsub
+
+Converts a text-based subtitle track to a bitmap-based subtitle track.
+
+The text2graphicsub filter uses libass to render all the subtitle
+frames in a text-based subtitle track (such as srt or ass) to allow
+its encoding with a bitmap-based subtitle encoder (such as dvd_subtitle).
+
+Inputs:
+- 0: Subtitles [text]
+
+Outputs:
+- 0: Subtitles [bitmap]
+
+It accepts the following parameters:
+
+@table @option
+
+@item s, size
+Set the size of the output. Default from input track.
+
+@item n, num_colors
+Set the number of palette colors for output images,
+Range [2,256]. Default 16.
+
+@item f, filename
+Set the media container from which to extract fonts required
+for rendering the subtitles, usually the same as the input
+track's media container. Can be omitted.
+
+@item fd, fontsdir
+Set the directory from which to load fonts required for
+rendering the subtitles. Can be used with 'fonts'. Can be omitted.
+
+@item ss, stripstyles
+Remove certain styles from an ass track which do not render well.
+Stripped styles include blurs, fades, and other animations.
+Default yes.
+
+@end table
+
+@subsection Examples
+
+@itemize
+@item
+Convert a video's text-based subtitle track to a dvd_subtitle subtitle track.
+@example
+ffmpeg -i video.mkv -map 0:v -map 0:a -filter_complex [0:s]text2graphicsub=f=video.mkv[dvd_sub] -map [dvd_sub] -c copy -c:s dvd_subtitle output.mkv
+@end example
+@end itemize
+
 @c man end SUBTITLE FILTERS
 
 @chapter Multimedia Filters

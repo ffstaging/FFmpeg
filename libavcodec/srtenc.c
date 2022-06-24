@@ -25,9 +25,9 @@
 #include "avcodec.h"
 #include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
-#include "ass_split.h"
-#include "ass.h"
 #include "codec_internal.h"
+#include "libavutil/ass_split_internal.h"
+#include "libavutil/ass_internal.h"
 
 
 #define SRT_STACK_SIZE 64
@@ -96,7 +96,7 @@ static void srt_stack_push_pop(SRTContext *s, const char c, int close)
 
 static void srt_style_apply(SRTContext *s, const char *style)
 {
-    ASSStyle *st = ff_ass_style_get(s->ass_ctx, style);
+    ASSStyle *st = avpriv_ass_style_get(s->ass_ctx, style);
     if (st) {
         int c = st->primary_color & 0xFFFFFF;
         if (st->font_name && strcmp(st->font_name, ASS_DEFAULT_FONT) ||
@@ -137,7 +137,7 @@ static av_cold int srt_encode_init(AVCodecContext *avctx)
 {
     SRTContext *s = avctx->priv_data;
     s->avctx = avctx;
-    s->ass_ctx = ff_ass_split(avctx->subtitle_header);
+    s->ass_ctx = avpriv_ass_split(avctx->subtitle_header);
     av_bprint_init(&s->buffer, 0, AV_BPRINT_SIZE_UNLIMITED);
     return s->ass_ctx ? 0 : AVERROR_INVALIDDATA;
 }
@@ -247,14 +247,14 @@ static int encode_frame(AVCodecContext *avctx,
             return AVERROR(EINVAL);
         }
 
-        dialog = ff_ass_split_dialog(s->ass_ctx, ass);
+        dialog = avpriv_ass_split_dialog(s->ass_ctx, ass);
         if (!dialog)
             return AVERROR(ENOMEM);
         s->alignment_applied = 0;
         if (avctx->codec_id == AV_CODEC_ID_SUBRIP)
             srt_style_apply(s, dialog->style);
-        ff_ass_split_override_codes(cb, s, dialog->text);
-        ff_ass_free_dialog(&dialog);
+        avpriv_ass_split_override_codes(cb, s, dialog->text);
+        avpriv_ass_free_dialog(&dialog);
     }
 
     if (!av_bprint_is_complete(&s->buffer))
@@ -286,7 +286,7 @@ static int text_encode_frame(AVCodecContext *avctx,
 static int srt_encode_close(AVCodecContext *avctx)
 {
     SRTContext *s = avctx->priv_data;
-    ff_ass_split_free(s->ass_ctx);
+    avpriv_ass_split_free(s->ass_ctx);
     av_bprint_finalize(&s->buffer, NULL);
     return 0;
 }

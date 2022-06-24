@@ -182,7 +182,7 @@ static int jacosub_decode_frame(AVCodecContext *avctx, AVSubtitle *sub,
 
         av_bprint_init(&buffer, JSS_MAX_LINESIZE, JSS_MAX_LINESIZE);
         jacosub_to_ass(avctx, &buffer, ptr);
-        ret = ff_ass_add_rect(sub, buffer.str, s->readorder++, 0, NULL, NULL);
+        ret = avpriv_ass_add_rect(sub, buffer.str, s->readorder++, 0, NULL, NULL);
         av_bprint_finalize(&buffer, NULL);
         if (ret < 0)
             return ret;

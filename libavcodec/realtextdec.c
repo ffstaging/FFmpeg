@@ -66,7 +66,7 @@ static int realtext_decode_frame(AVCodecContext *avctx, AVSubtitle *sub,
 
     av_bprint_init(&buf, 0, 4096);
     if (ptr && avpkt->size > 0 && !rt_event_to_ass(&buf, ptr))
-        ret = ff_ass_add_rect(sub, buf.str, s->readorder++, 0, NULL, NULL);
+        ret = avpriv_ass_add_rect(sub, buf.str, s->readorder++, 0, NULL, NULL);
     av_bprint_finalize(&buf, NULL);
     if (ret < 0)
         return ret;

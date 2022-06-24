@@ -24,8 +24,8 @@
 #include <string.h>
 
 #include "avcodec.h"
-#include "ass.h"
 #include "codec_internal.h"
+#include "libavutil/ass_internal.h"
 #include "libavutil/avstring.h"
 #include "libavutil/internal.h"
 #include "libavutil/mem.h"

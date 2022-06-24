@@ -153,12 +153,12 @@ static char *create_ass_text(TeletextContext *ctx, const char *text)
     AVBPrint buf;
 
     av_bprint_init(&buf, 0, AV_BPRINT_SIZE_UNLIMITED);
-    ff_ass_bprint_text_event(&buf, text, strlen(text), "", 0);
+    avpriv_ass_bprint_text_event(&buf, text, strlen(text), "", 0);
     if (!av_bprint_is_complete(&buf)) {
         av_bprint_finalize(&buf, NULL);
         return NULL;
     }
-    dialog = ff_ass_get_dialog(ctx->readorder++, 0, NULL, NULL, buf.str);
+    dialog = avpriv_ass_get_dialog(ctx->readorder++, 0, NULL, NULL, buf.str);
     av_bprint_finalize(&buf, NULL);
     return dialog;
 }
@@ -225,7 +225,7 @@ static int gen_sub_text(TeletextContext *ctx, AVSubtitleRect *sub_rect, vbi_page
         }
         av_log(ctx, AV_LOG_DEBUG, "subtext:%s:txetbus\n", sub_rect->ass);
     } else {
-        sub_rect->type = SUBTITLE_NONE;
+        sub_rect->type = AV_SUBTITLE_FMT_NONE;
     }
     av_bprint_finalize(&buf, NULL);
     return 0;
@@ -395,7 +395,7 @@ static int gen_sub_ass(TeletextContext *ctx, AVSubtitleRect *sub_rect, vbi_page 
 
     if (buf.len) {
         sub_rect->type = SUBTITLE_ASS;
-        sub_rect->ass = ff_ass_get_dialog(ctx->readorder++, 0, is_subtitle_page ? "Subtitle" : "Teletext", NULL, buf.str);
+        sub_rect->ass = avpriv_ass_get_dialog(ctx->readorder++, 0, is_subtitle_page ? "Subtitle" : "Teletext", NULL, buf.str);
 
         if (!sub_rect->ass) {
             av_bprint_finalize(&buf, NULL);
@@ -403,7 +403,7 @@ static int gen_sub_ass(TeletextContext *ctx, AVSubtitleRect *sub_rect, vbi_page 
         }
         av_log(ctx, AV_LOG_DEBUG, "subtext:%s:txetbus\n", sub_rect->ass);
     } else {
-        sub_rect->type = SUBTITLE_NONE;
+        sub_rect->type = AV_SUBTITLE_FMT_NONE;
     }
     av_bprint_finalize(&buf, NULL);
     return 0;
@@ -463,7 +463,7 @@ static int gen_sub_bitmap(TeletextContext *ctx, AVSubtitleRect *sub_rect, vbi_pa
 
     if (vc >= vcend) {
         av_log(ctx, AV_LOG_DEBUG, "dropping empty page %3x\n", page->pgno);
-        sub_rect->type = SUBTITLE_NONE;
+        sub_rect->type = AV_SUBTITLE_FMT_NONE;
         return 0;
     }
 
@@ -696,7 +696,7 @@ static int teletext_decode_frame(AVCodecContext *avctx, AVSubtitle *sub,
         sub->num_rects = 0;
         sub->pts = ctx->pages->pts;
 
-        if (ctx->pages->sub_rect->type != SUBTITLE_NONE) {
+        if (ctx->pages->sub_rect->type != AV_SUBTITLE_FMT_NONE) {
             sub->rects = av_malloc(sizeof(*sub->rects));
             if (sub->rects) {
                 sub->num_rects = 1;

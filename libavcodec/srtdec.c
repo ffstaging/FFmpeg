@@ -79,7 +79,7 @@ static int srt_decode_frame(AVCodecContext *avctx, AVSubtitle *sub,
 
     ret = srt_to_ass(avctx, &buffer, avpkt->data, x1, y1, x2, y2);
     if (ret >= 0)
-        ret = ff_ass_add_rect(sub, buffer.str, s->readorder++, 0, NULL, NULL);
+        ret = avpriv_ass_add_rect(sub, buffer.str, s->readorder++, 0, NULL, NULL);
     av_bprint_finalize(&buffer, NULL);
     if (ret < 0)
         return ret;

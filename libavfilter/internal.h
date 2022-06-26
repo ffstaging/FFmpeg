@@ -148,9 +148,11 @@ static av_always_inline int ff_filter_execute(AVFilterContext *ctx, avfilter_act
 
 enum FilterFormatsState {
     /**
-     * The default value meaning that this filter supports all formats
-     * and (for audio) sample rates and channel layouts/counts as long
-     * as these properties agree for all inputs and outputs.
+     * The default value meaning that this filter supports
+     * - For video:     all formats
+     * - For audio:     all sample rates and channel layouts/counts
+     * - For subtitles: all subtitle formats
+     * as long as these properties agree for all inputs and outputs.
      * This state is only allowed in case all inputs and outputs actually
      * have the same type.
      * The union is unused in this state.
@@ -161,8 +163,10 @@ enum FilterFormatsState {
     FF_FILTER_FORMATS_QUERY_FUNC,       ///< formats.query active.
     FF_FILTER_FORMATS_PIXFMT_LIST,      ///< formats.pixels_list active.
     FF_FILTER_FORMATS_SAMPLEFMTS_LIST,  ///< formats.samples_list active.
+    FF_FILTER_FORMATS_SUBFMTS_LIST,     ///< formats.subs_list active.
     FF_FILTER_FORMATS_SINGLE_PIXFMT,    ///< formats.pix_fmt active
     FF_FILTER_FORMATS_SINGLE_SAMPLEFMT, ///< formats.sample_fmt active.
+    FF_FILTER_FORMATS_SINGLE_SUBFMT,    ///< formats.sub_fmt active.
 };
 
 #define FILTER_QUERY_FUNC(func)        \
@@ -174,16 +178,24 @@ enum FilterFormatsState {
 #define FILTER_SAMPLEFMTS_ARRAY(array) \
         .formats.samples_list = array, \
         .formats_state        = FF_FILTER_FORMATS_SAMPLEFMTS_LIST
+#define FILTER_SUBFMTS_ARRAY(array) \
+        .formats.subs_list = array, \
+        .formats_state        = FF_FILTER_FORMATS_SUBFMTS_LIST
 #define FILTER_PIXFMTS(...)            \
     FILTER_PIXFMTS_ARRAY(((const enum AVPixelFormat []) { __VA_ARGS__, AV_PIX_FMT_NONE }))
 #define FILTER_SAMPLEFMTS(...)         \
     FILTER_SAMPLEFMTS_ARRAY(((const enum AVSampleFormat[]) { __VA_ARGS__, AV_SAMPLE_FMT_NONE }))
+#define FILTER_SUBFMTS(...)         \
+    FILTER_SUBFMTS_ARRAY(((const enum AVSubtitleType[]) { __VA_ARGS__, AV_SUBTITLE_FMT_NONE }))
 #define FILTER_SINGLE_PIXFMT(pix_fmt_)  \
         .formats.pix_fmt = pix_fmt_,    \
         .formats_state   = FF_FILTER_FORMATS_SINGLE_PIXFMT
 #define FILTER_SINGLE_SAMPLEFMT(sample_fmt_) \
         .formats.sample_fmt = sample_fmt_,   \
         .formats_state      = FF_FILTER_FORMATS_SINGLE_SAMPLEFMT
+#define FILTER_SINGLE_SUBFMT(sub_fmt_) \
+        .formats.sub_fmt = sub_fmt_,   \
+        .formats_state      = FF_FILTER_FORMATS_SINGLE_SUBFMT
 
 #define FILTER_INOUTPADS(inout, array) \
        .inout        = array, \

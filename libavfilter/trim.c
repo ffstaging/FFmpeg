@@ -83,7 +83,7 @@ static int config_input(AVFilterLink *inlink)
 {
     AVFilterContext *ctx = inlink->dst;
     TrimContext       *s = ctx->priv;
-    AVRational tb = (inlink->type == AVMEDIA_TYPE_VIDEO) ?
+    AVRational tb = (inlink->type != AVMEDIA_TYPE_AUDIO) ?
                      inlink->time_base : (AVRational){ 1, inlink->sample_rate };
 
     if (s->start_time != INT64_MAX) {
@@ -369,3 +369,61 @@ const AVFilter ff_af_atrim = {
     FILTER_OUTPUTS(atrim_outputs),
 };
 #endif // CONFIG_ATRIM_FILTER
+
+#if CONFIG_STRIM_FILTER
+
+static int sconfig_output(AVFilterLink *outlink)
+{
+    AVFilterContext *ctx = outlink->src;
+    AVFilterLink *inlink = ctx->inputs[0];
+
+    outlink->format = inlink->format;
+    outlink->w = inlink->w;
+    outlink->h = inlink->h;
+
+    return 0;
+}
+
+
+#define FLAGS (AV_OPT_FLAG_SUBTITLE_PARAM | AV_OPT_FLAG_FILTERING_PARAM)
+static const AVOption strim_options[] = {
+    COMMON_OPTS
+    { "start_frame", "Number of the first frame that should be passed "
+        "to the output",                                                 OFFSET(start_frame), AV_OPT_TYPE_INT64,  { .i64 = -1 },       -1, INT64_MAX, FLAGS },
+    { "end_frame",   "Number of the first frame that should be dropped "
+        "again",                                                         OFFSET(end_frame),   AV_OPT_TYPE_INT64,  { .i64 = INT64_MAX }, 0, INT64_MAX, FLAGS },
+    { NULL }
+};
+#undef FLAGS
+
+AVFILTER_DEFINE_CLASS(strim);
+
+static const AVFilterPad strim_inputs[] = {
+    {
+        .name         = "default",
+        .type         = AVMEDIA_TYPE_SUBTITLE,
+        .filter_frame = trim_filter_frame,
+        .config_props = config_input,
+    },
+};
+
+static const AVFilterPad strim_outputs[] = {
+    {
+        .name         = "default",
+        .type         = AVMEDIA_TYPE_SUBTITLE,
+        .config_props = sconfig_output,
+    },
+};
+
+const AVFilter ff_sf_strim = {
+    .name        = "strim",
+    .description = NULL_IF_CONFIG_SMALL("Pick one continuous section from the input, drop the rest."),
+    .init        = init,
+    .priv_size   = sizeof(TrimContext),
+    .priv_class  = &strim_class,
+    .flags       = AVFILTER_FLAG_METADATA_ONLY,
+    FILTER_INPUTS(strim_inputs),
+    FILTER_OUTPUTS(strim_outputs),
+};
+#endif // CONFIG_STRIM_FILTER
+

@@ -581,7 +581,9 @@ OBJS-$(CONFIG_NULLSINK_FILTER)               += vsink_nullsink.o
 # subtitle filters
 OBJS-$(CONFIG_CENSOR_FILTER)                 += sf_textmod.o
 OBJS-$(CONFIG_SHOW_SPEAKER_FILTER)           += sf_textmod.o
+OBJS-$(CONFIG_SNULL_FILTER)                  += sf_snull.o
 OBJS-$(CONFIG_SPLITCC_FILTER)                += sf_splitcc.o
+OBJS-$(CONFIG_STRIM_FILTER)                  += trim.o
 OBJS-$(CONFIG_STRIPSTYLES_FILTER)            += sf_stripstyles.o
 OBJS-$(CONFIG_SUBFEED_FILTER)                += sf_subfeed.o
 OBJS-$(CONFIG_SUBSCALE_FILTER)               += sf_subscale.o

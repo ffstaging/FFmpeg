@@ -45,6 +45,7 @@
 #include "libavutil/log.h"
 #include "libavutil/samplefmt.h"
 #include "libavutil/pixfmt.h"
+#include "libavutil/subfmt.h"
 #include "libavutil/rational.h"
 
 #include "libavfilter/version_major.h"
@@ -350,6 +351,12 @@ typedef struct AVFilter {
          */
         const enum AVSampleFormat *samples_list;
         /**
+         * Analogous to pixels, but delimited by AV_SUBTITLE_FMT_NONE
+         * and restricted to filters that only have AVMEDIA_TYPE_SUBTITLE
+         * inputs and outputs.
+         */
+        const enum AVSubtitleType *subs_list;
+        /**
          * Equivalent to { pix_fmt, AV_PIX_FMT_NONE } as pixels_list.
          */
         enum AVPixelFormat  pix_fmt;
@@ -357,6 +364,10 @@ typedef struct AVFilter {
          * Equivalent to { sample_fmt, AV_SAMPLE_FMT_NONE } as samples_list.
          */
         enum AVSampleFormat sample_fmt;
+        /**
+         * Equivalent to { sub_fmt, AV_SUBTITLE_FMT_NONE } as subs_list.
+         */
+        enum AVSubtitleType sub_fmt;
     } formats;
 
     int priv_size;      ///< size of private data to allocate for the filter

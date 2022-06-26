@@ -54,7 +54,8 @@ static void tlog_ref(void *ctx, AVFrame *ref, int end)
             ref->linesize[0], ref->linesize[1], ref->linesize[2], ref->linesize[3],
             ref->pts, ref->pkt_pos);
 
-    if (ref->width) {
+    switch(ref->type) {
+    case AVMEDIA_TYPE_VIDEO:
         ff_tlog(ctx, " a:%d/%d s:%dx%d i:%c iskey:%d type:%c",
                 ref->sample_aspect_ratio.num, ref->sample_aspect_ratio.den,
                 ref->width, ref->height,
@@ -62,8 +63,8 @@ static void tlog_ref(void *ctx, AVFrame *ref, int end)
                 ref->top_field_first ? 'T' : 'B',    /* Top / Bottom */
                 ref->key_frame,
                 av_get_picture_type_char(ref->pict_type));
-    }
-    if (ref->nb_samples) {
+        break;
+    case AVMEDIA_TYPE_AUDIO:
         AVBPrint bprint;
 
         av_bprint_init(&bprint, 1, AV_BPRINT_SIZE_UNLIMITED);
@@ -73,6 +74,7 @@ static void tlog_ref(void *ctx, AVFrame *ref, int end)
                 ref->nb_samples,
                 ref->sample_rate);
         av_bprint_finalize(&bprint, NULL);
+        break;
     }
 
     ff_tlog(ctx, "]%s", end ? "\n" : "");
@@ -356,6 +358,14 @@ int avfilter_config_links(AVFilterContext *filter)
 
                 if (!link->time_base.num && !link->time_base.den)
                     link->time_base = (AVRational) {1, link->sample_rate};
+
+                break;
+
+            case AVMEDIA_TYPE_SUBTITLE:
+                if (!link->time_base.num && !link->time_base.den)
+                    link->time_base = inlink ? inlink->time_base : AV_TIME_BASE_Q;
+
+                break;
             }
 
             if (link->src->nb_inputs && link->src->inputs[0]->hw_frames_ctx &&
@@ -1022,6 +1032,10 @@ int ff_filter_frame(AVFilterLink *link, AVFrame *frame)
             av_assert1(frame->format                 == link->format);
             av_assert1(frame->width               == link->w);
             av_assert1(frame->height               == link->h);
+        }
+    } else if (link->type == AVMEDIA_TYPE_SUBTITLE) {
+        if (frame->format != link->format) {
+            av_log(link->dst, AV_LOG_WARNING, "Subtitle format change from %d to %d\n", link->format, frame->format);
         }
     } else {
         if (frame->format != link->format) {

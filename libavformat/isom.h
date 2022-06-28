@@ -318,6 +318,7 @@ typedef struct MOVContext {
     uint32_t max_stts_delta;
     int poster_time_location;
     int is_still_picture_avif;
+    int primary_item_id;
 } MOVContext;
 
 int ff_mp4_read_descr_len(AVIOContext *pb);

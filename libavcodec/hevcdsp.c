@@ -22,6 +22,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "config_components.h"
+
 #include "hevcdsp.h"
 
 static const int8_t transform[32][32] = {
@@ -257,6 +259,7 @@ int i = 0;
         break;
     }
 
+#if CONFIG_HEVC_DECODER
 #if ARCH_AARCH64
     ff_hevc_dsp_init_aarch64(hevcdsp, bit_depth);
 #elif ARCH_ARM
@@ -269,5 +272,6 @@ int i = 0;
     ff_hevc_dsp_init_mips(hevcdsp, bit_depth);
 #elif ARCH_LOONGARCH
     ff_hevc_dsp_init_loongarch(hevcdsp, bit_depth);
+#endif
 #endif
 }

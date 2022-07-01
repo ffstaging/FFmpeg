@@ -144,7 +144,11 @@ OBJS-$(CONFIG_MSS34DSP)                += mss34dsp.o
 OBJS-$(CONFIG_PIXBLOCKDSP)             += pixblockdsp.o
 OBJS-$(CONFIG_QPELDSP)                 += qpeldsp.o
 OBJS-$(CONFIG_QSV)                     += qsv.o
-OBJS-$(CONFIG_QSVDEC)                  += qsvdec.o
+OBJS-$(CONFIG_QSVDEC)                  += qsvdec.o h264_slice.o h264_cabac.o h264_cavlc.o \
+                                          h264_direct.o h264_mb.o h264_picture.o h264_loopfilter.o \
+                                          h264dec.o h264_refs.o cabac.o hevcdec.o hevc_refs.o \
+										  hevc_filter.o hevc_cabac.o hevc_mvs.o hevcpred.o hevcdsp.o \
+										  h274.o dovi_rpu.o mpeg12dec.o
 OBJS-$(CONFIG_QSVENC)                  += qsvenc.o
 OBJS-$(CONFIG_RANGECODER)              += rangecoder.o
 OBJS-$(CONFIG_RDFT)                    += rdft.o

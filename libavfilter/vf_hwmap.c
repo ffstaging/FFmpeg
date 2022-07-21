@@ -82,8 +82,8 @@ static int hwmap_config_output(AVFilterLink *outlink)
                 goto fail;
             }
 
-            err = av_hwdevice_ctx_create_derived(&device, type,
-                                                 hwfc->device_ref, 0);
+            err = av_hwdevice_ctx_get_or_create_derived(&device, type,
+                                                        hwfc->device_ref, 0);
             if (err < 0) {
                 av_log(avctx, AV_LOG_ERROR, "Failed to created derived "
                        "device context: %d.\n", err);

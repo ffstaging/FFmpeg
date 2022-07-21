@@ -51,7 +51,7 @@ static int hwupload_query_formats(AVFilterContext *avctx)
         /* We already have a specified device. */
     } else if (avctx->hw_device_ctx) {
         if (ctx->device_type) {
-            err = av_hwdevice_ctx_create_derived(
+            err = av_hwdevice_ctx_get_or_create_derived(
                 &ctx->hwdevice_ref,
                 av_hwdevice_find_type_by_name(ctx->device_type),
                 avctx->hw_device_ctx, 0);

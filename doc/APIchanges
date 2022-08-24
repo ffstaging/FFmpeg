@@ -14,6 +14,9 @@ libavutil:     2021-04-27
 
 API changes, most recent first:
 
+2022-08-xx - xxxxxxxxxx - lavu 57.34.100 - log.h
+  Add flags AV_LOG_PRINT_TIME and AV_LOG_PRINT_DATETIME.
+
 2022-08-xx - xxxxxxxxxx - lavf 59 - avformat.h
   Deprecate av_stream_get_end_pts() without replacement.
 

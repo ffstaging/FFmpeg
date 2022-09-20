@@ -492,6 +492,13 @@ struct AVFilterContext {
      * configured.
      */
     int extra_hw_frames;
+
+    /**
+     * Max number of jobs allowed in this filter instance.
+     * If <= 0, its value is ignored.
+     * Overrides global number of jobs set per filter graph.
+     */
+    int nb_jobs;
 };
 
 /**
@@ -935,6 +942,13 @@ typedef struct AVFilterGraph {
     int sink_links_count;
 
     unsigned disable_auto_convert;
+
+    /**
+     * Maximum number of jobs used by filters in this graph. May be set by
+     * the caller before adding any filters to the filtergraph. Zero (the
+     * default) means that the number of jobs is determined automatically.
+     */
+    int nb_jobs;
 } AVFilterGraph;
 
 /**

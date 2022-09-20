@@ -23,6 +23,7 @@
 
 #include <stddef.h>
 
+#include "libavutil/cpu.h"
 #include "libavutil/error.h"
 #include "libavutil/macros.h"
 #include "libavutil/mem.h"
@@ -98,9 +99,13 @@ int ff_graph_thread_init(AVFilterGraph *graph)
         av_freep(&graph->internal->thread);
         graph->thread_type = 0;
         graph->nb_threads  = 1;
+        graph->nb_jobs     = 1;
         return (ret < 0) ? ret : 0;
     }
     graph->nb_threads = ret;
+
+    if (graph->nb_jobs < 1)
+        graph->nb_jobs = av_cpu_job_count();
 
     graph->internal->thread_execute = thread_execute;
 

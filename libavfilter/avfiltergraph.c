@@ -51,6 +51,9 @@ static const AVOption filtergraph_options[] = {
     { "threads",     "Maximum number of threads", OFFSET(nb_threads), AV_OPT_TYPE_INT,
         { .i64 = 0 }, 0, INT_MAX, F|V|A, "threads"},
         {"auto", "autodetect a suitable number of threads to use", 0, AV_OPT_TYPE_CONST, {.i64 = 0 }, .flags = F|V|A, .unit = "threads"},
+    { "jobs",        "Maximum number of jobs", OFFSET(nb_jobs), AV_OPT_TYPE_INT,
+        { .i64 = 0 }, 0, INT_MAX, F|V|A, "jobs"},
+        {"auto", "autodetect a suitable number of jobs to use", 0, AV_OPT_TYPE_CONST, {.i64 = 0 }, .flags = F|V|A, .unit = "jobs"},
     {"scale_sws_opts"       , "default scale filter options"        , OFFSET(scale_sws_opts)        ,
         AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, F|V },
     {"aresample_swr_opts"   , "default aresample filter options"    , OFFSET(aresample_swr_opts)    ,
@@ -75,6 +78,7 @@ int ff_graph_thread_init(AVFilterGraph *graph)
 {
     graph->thread_type = 0;
     graph->nb_threads  = 1;
+    graph->nb_jobs     = 1;
     return 0;
 }
 #endif

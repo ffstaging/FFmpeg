@@ -621,6 +621,8 @@ static const AVOption avfilter_options[] = {
     { "enable", "set enable expression", OFFSET(enable_str), AV_OPT_TYPE_STRING, {.str=NULL}, .flags = TFLAGS },
     { "threads", "Allowed number of threads", OFFSET(nb_threads), AV_OPT_TYPE_INT,
         { .i64 = 0 }, 0, INT_MAX, FLAGS },
+    { "jobs", "Allowed number of jobs", OFFSET(nb_jobs), AV_OPT_TYPE_INT,
+        { .i64 = 0 }, 0, INT_MAX, FLAGS },
     { "extra_hw_frames", "Number of extra hardware frames to allocate for the user",
         OFFSET(extra_hw_frames), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, INT_MAX, FLAGS },
     { NULL },
@@ -795,6 +797,13 @@ int ff_filter_get_nb_threads(AVFilterContext *ctx)
     if (ctx->nb_threads > 0)
         return FFMIN(ctx->nb_threads, ctx->graph->nb_threads);
     return ctx->graph->nb_threads;
+}
+
+int ff_filter_get_nb_jobs(AVFilterContext *ctx)
+{
+    if (ctx->nb_jobs > 0)
+        return FFMIN(ctx->nb_jobs, ctx->graph->nb_jobs);
+    return ctx->graph->nb_jobs;
 }
 
 static int process_options(AVFilterContext *ctx, AVDictionary **options,

@@ -196,6 +196,11 @@ will produce a thread pool with this many threads available for parallel
 processing. The default is 0 which means that the thread count will be
 determined by the number of available CPUs.
 
+@item -filter_jobs @var{nb_jobs}
+Defines how many distinct jobs a filter pipeline will break frames into.
+The default is 0 which means that the thread count will be determined
+by the CPU topology.
+
 @end table
 
 @section While playing

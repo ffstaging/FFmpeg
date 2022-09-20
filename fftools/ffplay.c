@@ -355,6 +355,7 @@ static char *afilters = NULL;
 static int autorotate = 1;
 static int find_stream_info = 1;
 static int filter_nbthreads = 0;
+static int filter_nbjobs = 0;
 
 /* current context */
 static int is_full_screen;
@@ -1963,6 +1964,7 @@ static int configure_audio_filters(VideoState *is, const char *afilters, int for
     if (!(is->agraph = avfilter_graph_alloc()))
         return AVERROR(ENOMEM);
     is->agraph->nb_threads = filter_nbthreads;
+    is->agraph->nb_jobs = filter_nbjobs;
 
     av_bprint_init(&bp, 0, AV_BPRINT_SIZE_AUTOMATIC);
 
@@ -2168,6 +2170,7 @@ static int video_thread(void *arg)
                 goto the_end;
             }
             graph->nb_threads = filter_nbthreads;
+            graph->nb_jobs = filter_nbjobs;
             if ((ret = configure_video_filters(graph, is, vfilters_list ? vfilters_list[is->vfilter_idx] : NULL, frame)) < 0) {
                 SDL_Event event;
                 event.type = FF_QUIT_EVENT;
@@ -3615,6 +3618,7 @@ static const OptionDef options[] = {
     { "find_stream_info", OPT_BOOL | OPT_INPUT | OPT_EXPERT, { &find_stream_info },
         "read and decode the streams to fill missing information with heuristics" },
     { "filter_threads", HAS_ARG | OPT_INT | OPT_EXPERT, { &filter_nbthreads }, "number of filter threads per graph" },
+    { "filter_jobs", HAS_ARG | OPT_INT | OPT_EXPERT, { &filter_nbjobs }, "number of filter jobs per graph" },
     { NULL, },
 };
 

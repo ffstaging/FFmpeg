@@ -175,7 +175,9 @@ int qp_hist           = 0;
 int stdin_interaction = 1;
 float max_error_rate  = 2.0/3;
 char *filter_nbthreads;
+char *filter_nbjobs;
 int filter_complex_nbthreads = 0;
+int filter_complex_nbjobs = 0;
 int vstats_version = 2;
 int auto_conversion_filters = 1;
 int64_t stats_period = 500000;
@@ -349,6 +351,13 @@ static int opt_filter_threads(void *optctx, const char *opt, const char *arg)
 {
     av_free(filter_nbthreads);
     filter_nbthreads = av_strdup(arg);
+    return 0;
+}
+
+static int opt_filter_jobs(void *optctx, const char *opt, const char *arg)
+{
+    av_free(filter_nbjobs);
+    filter_nbjobs = av_strdup(arg);
     return 0;
 }
 
@@ -3961,6 +3970,8 @@ const OptionDef options[] = {
         "set stream filtergraph", "filter_graph" },
     { "filter_threads", HAS_ARG,                                     { .func_arg = opt_filter_threads },
         "number of non-complex filter threads" },
+    { "filter_jobs", HAS_ARG,                                        { .func_arg = opt_filter_jobs },
+        "number of non-complex filter jobs" },
     { "filter_script",  HAS_ARG | OPT_STRING | OPT_SPEC | OPT_OUTPUT, { .off = OFFSET(filter_scripts) },
         "read stream filtergraph description from a file", "filename" },
     { "reinit_filter",  HAS_ARG | OPT_INT | OPT_SPEC | OPT_INPUT,    { .off = OFFSET(reinit_filters) },
@@ -3969,6 +3980,8 @@ const OptionDef options[] = {
         "create a complex filtergraph", "graph_description" },
     { "filter_complex_threads", HAS_ARG | OPT_INT,                   { &filter_complex_nbthreads },
         "number of threads for -filter_complex" },
+    { "filter_complex_jobs", HAS_ARG | OPT_INT,                      { &filter_complex_nbjobs },
+        "number of jobs for -filter_complex" },
     { "lavfi",          HAS_ARG | OPT_EXPERT,                        { .func_arg = opt_filter_complex },
         "create a complex filtergraph", "graph_description" },
     { "filter_complex_script", HAS_ARG | OPT_EXPERT,                 { .func_arg = opt_filter_complex_script },

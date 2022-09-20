@@ -621,6 +621,7 @@ static void ffmpeg_cleanup(int ret)
     }
     av_freep(&vstats_filename);
     av_freep(&filter_nbthreads);
+    av_freep(&filter_nbjobs);
 
     av_freep(&input_streams);
     av_freep(&input_files);

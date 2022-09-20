@@ -998,6 +998,12 @@ int configure_filtergraph(FilterGraph *fg)
                 av_opt_set(fg->graph, "threads", e->value, 0);
         }
 
+        if (filter_nbjobs) {
+            ret = av_opt_set(fg->graph, "jobs", filter_nbjobs, 0);
+            if (ret < 0)
+                goto fail;
+        }
+
         args[0] = 0;
         e       = NULL;
         while ((e = av_dict_get(ost->sws_dict, "", e,
@@ -1020,6 +1026,7 @@ int configure_filtergraph(FilterGraph *fg)
         av_opt_set(fg->graph, "aresample_swr_opts", args, 0);
     } else {
         fg->graph->nb_threads = filter_complex_nbthreads;
+        fg->graph->nb_jobs    = filter_complex_nbjobs;
     }
 
     if ((ret = avfilter_graph_parse2(fg->graph, graph_desc, &inputs, &outputs)) < 0)

@@ -54,7 +54,7 @@ typedef struct UnsharpContext {
     int nb_planes;
     int bitdepth;
     int bps;
-    int nb_threads;
+    int nb_jobs;
     int (* apply_unsharp)(AVFilterContext *ctx, AVFrame *in, AVFrame *out);
     int (* unsharp_slice)(AVFilterContext *ctx, void *arg, int jobnr, int nb_jobs);
 } UnsharpContext;

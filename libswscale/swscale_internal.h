@@ -339,6 +339,7 @@ typedef struct SwsContext {
     int vChrDrop;                 ///< Binary logarithm of extra vertical subsampling factor in source image chroma planes specified by user.
     int sliceDir;                 ///< Direction that slices are fed to the scaler (1 = top-to-bottom, -1 = bottom-to-top).
     int nb_threads;               ///< Number of threads used for scaling
+    int nb_jobs;                  ///< Number of slice jobs used for scaling
     double param[2];              ///< Input parameters for scaling algorithms that need them.
 
     AVFrame *frame_src;

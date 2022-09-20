@@ -81,6 +81,8 @@ static const AVOption swscale_options[] = {
 
     { "threads",         "number of threads",             OFFSET(nb_threads),   AV_OPT_TYPE_INT, {.i64 = 1 }, 0, INT_MAX, VE, "threads" },
         { "auto",        NULL,                            0,                  AV_OPT_TYPE_CONST, {.i64 = 0 },    .flags = VE, "threads" },
+    { "jobs",            "number of jobs",                OFFSET(nb_jobs),      AV_OPT_TYPE_INT, {.i64 = 0 }, 0, INT_MAX, VE, "jobs" },
+        { "auto",        NULL,                            0,                  AV_OPT_TYPE_CONST, {.i64 = 0 },    .flags = VE, "jobs" },
 
     { NULL }
 };

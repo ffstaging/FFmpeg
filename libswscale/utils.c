@@ -1277,18 +1277,21 @@ static int context_init_threaded(SwsContext *c,
                                     ff_sws_slice_worker, NULL, c->nb_threads);
     if (ret == AVERROR(ENOSYS)) {
         c->nb_threads = 1;
+        c->nb_jobs = 1;
         return 0;
     } else if (ret < 0)
         return ret;
 
     c->nb_threads = ret;
+    if (c->nb_jobs < 1)
+        c->nb_jobs = av_cpu_job_count();
 
-    c->slice_ctx = av_calloc(c->nb_threads, sizeof(*c->slice_ctx));
-    c->slice_err = av_calloc(c->nb_threads, sizeof(*c->slice_err));
+    c->slice_ctx = av_calloc(c->nb_jobs, sizeof(*c->slice_ctx));
+    c->slice_err = av_calloc(c->nb_jobs, sizeof(*c->slice_err));
     if (!c->slice_ctx || !c->slice_err)
         return AVERROR(ENOMEM);
 
-    for (int i = 0; i < c->nb_threads; i++) {
+    for (int i = 0; i < c->nb_jobs; i++) {
         c->slice_ctx[i] = sws_alloc_context();
         if (!c->slice_ctx[i])
             return AVERROR(ENOMEM);

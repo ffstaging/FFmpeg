@@ -111,6 +111,17 @@ int av_cpu_count(void);
 void av_cpu_force_count(int count);
 
 /**
+ * @return an estimated optimal maximum number of jobs for tasks to be sliced into.
+ */
+int av_cpu_job_count(void);
+
+/**
+ * Overrides job count computation and forces the specified count.
+ * Count < 1 disables forcing of specific count.
+ */
+void av_cpu_force_job_count(int count);
+
+/**
  * Get the maximum data alignment that may be required by FFmpeg.
  *
  * Note that this is affected by the build configuration and the CPU flags mask,

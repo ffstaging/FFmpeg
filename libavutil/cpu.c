@@ -51,6 +51,7 @@
 
 static atomic_int cpu_flags = ATOMIC_VAR_INIT(-1);
 static atomic_int cpu_count = ATOMIC_VAR_INIT(-1);
+static atomic_int job_count = ATOMIC_VAR_INIT(-1);
 
 static int get_cpu_flags(void)
 {
@@ -249,6 +250,42 @@ int av_cpu_count(void)
 void av_cpu_force_count(int count)
 {
     atomic_store_explicit(&cpu_count, count, memory_order_relaxed);
+}
+
+int av_cpu_job_count(void)
+{
+    static atomic_int printed = ATOMIC_VAR_INIT(0);
+    int loaded = 0;
+
+    int jobs = av_cpu_count();
+
+#if __APPLE__
+    int nperflevels = 1;
+    size_t len = sizeof(nperflevels);
+
+    if (sysctlbyname("hw.nperflevels", &nperflevels, &len, NULL, 0) == -1)
+        nperflevels = 1;
+
+    if (nperflevels > 1)
+        jobs *= 3;
+#endif
+
+    if (!atomic_exchange_explicit(&printed, 1, memory_order_relaxed))
+        av_log(NULL, AV_LOG_DEBUG, "computed default job factor of %d\n", jobs);
+
+    loaded = atomic_load_explicit(&job_count, memory_order_relaxed);
+
+    if (loaded > 0) {
+        jobs = loaded;
+        av_log(NULL, AV_LOG_DEBUG, "overriding to job factor of %d\n", jobs);
+    }
+
+    return jobs;
+}
+
+void av_cpu_force_job_count(int factor)
+{
+    atomic_store_explicit(&job_count, factor, memory_order_relaxed);
 }
 
 size_t av_cpu_max_align(void)

@@ -20,6 +20,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "config_components.h"
+
 #include "libavutil/avstring.h"
 #include "libavutil/channel_layout.h"
 #include "avformat.h"
@@ -38,9 +40,9 @@
 #define ARGO_CVG_SAMPLES_PER_BLOCK  28
 
 typedef struct ArgoCVGHeader {
-    uint32_t size; /*< File size -8 (this + trailing checksum) */
-    uint32_t unk1; /*< Unknown. Always seems to be 0 or 1. */
-    uint32_t unk2; /*< Unknown. Always seems to be 0 or 1. */
+    uint32_t size;   /*< File size -8 (this + trailing checksum) */
+    uint32_t loop;   /*< Loop flag. */
+    uint32_t reverb; /*< Reverb flag. */
 } ArgoCVGHeader;
 
 typedef struct ArgoCVGOverride {
@@ -60,6 +62,8 @@ typedef struct ArgoCVGDemuxContext {
 typedef struct ArgoCVGMuxContext {
     const AVClass *class;
     int           skip_rate_check;
+    int           loop;
+    int           reverb;
     uint32_t      checksum;
     size_t        size;
 } ArgoCVGMuxContext;
@@ -89,17 +93,17 @@ static int argo_cvg_probe(const AVProbeData *p)
     if (p->buf_size < ARGO_CVG_HEADER_SIZE)
         return 0;
 
-    cvg.size = AV_RL32(p->buf + 0);
-    cvg.unk1 = AV_RL32(p->buf + 4);
-    cvg.unk2 = AV_RL32(p->buf + 8);
+    cvg.size   = AV_RL32(p->buf + 0);
+    cvg.loop   = AV_RL32(p->buf + 4);
+    cvg.reverb = AV_RL32(p->buf + 8);
 
     if (cvg.size < 8)
         return 0;
 
-    if (cvg.unk1 != 0 && cvg.unk1 != 1)
+    if (cvg.loop != 0 && cvg.loop != 1)
         return 0;
 
-    if (cvg.unk2 != 0 && cvg.unk2 != 1)
+    if (cvg.reverb != 0 && cvg.reverb != 1)
         return 0;
 
     return AVPROBE_SCORE_MAX / 4 + 1;
@@ -148,20 +152,24 @@ static int argo_cvg_read_header(AVFormatContext *s)
     else if (ret != ARGO_CVG_HEADER_SIZE)
         return AVERROR(EIO);
 
-    ctx->header.size = AV_RL32(buf + 0);
-    ctx->header.unk1 = AV_RL32(buf + 4);
-    ctx->header.unk2 = AV_RL32(buf + 8);
+    ctx->header.size   = AV_RL32(buf + 0);
+    ctx->header.loop   = AV_RL32(buf + 4);
+    ctx->header.reverb = AV_RL32(buf + 8);
 
     if (ctx->header.size < 8)
         return AVERROR_INVALIDDATA;
 
-    av_log(s, AV_LOG_TRACE, "size       = %u\n", ctx->header.size);
-    av_log(s, AV_LOG_TRACE, "unk        = %u, %u\n", ctx->header.unk1, ctx->header.unk2);
-
     if ((ret = argo_cvg_read_checksum(s->pb, &ctx->header, &ctx->checksum)) < 0)
         return ret;
 
-    av_log(s, AV_LOG_TRACE, "checksum   = %u\n", ctx->checksum);
+    if ((ret = av_dict_set_int(&st->metadata, "loop", ctx->header.loop, 0)) < 0)
+        return ret;
+
+    if ((ret = av_dict_set_int(&st->metadata, "reverb", ctx->header.reverb, 0)) < 0)
+        return ret;
+
+    if ((ret = av_dict_set_int(&st->metadata, "checksum", ctx->checksum, 0)) < 0)
+        return ret;
 
     par                         = st->codecpar;
     par->codec_type             = AVMEDIA_TYPE_AUDIO;
@@ -170,10 +178,10 @@ static int argo_cvg_read_header(AVFormatContext *s)
 
     for (size_t i = 0; i < FF_ARRAY_ELEMS(overrides); i++) {
         const ArgoCVGOverride *ovr = overrides + i;
-        if (ovr->header.size != ctx->header.size ||
-            ovr->header.unk1 != ctx->header.unk1 ||
-            ovr->header.unk2 != ctx->header.unk2 ||
-            ovr->checksum    != ctx->checksum    ||
+        if (ovr->header.size   != ctx->header.size ||
+            ovr->header.loop   != ctx->header.loop ||
+            ovr->header.reverb != ctx->header.reverb ||
+            ovr->checksum      != ctx->checksum    ||
             av_strcasecmp(filename, ovr->name) != 0)
             continue;
 
@@ -182,8 +190,7 @@ static int argo_cvg_read_header(AVFormatContext *s)
         break;
     }
 
-    par->channels               = 1;
-    par->channel_layout         = AV_CH_LAYOUT_MONO;
+    par->ch_layout              = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
 
     par->bits_per_coded_sample  = 4;
     par->block_align            = ARGO_CVG_BLOCK_ALIGN;
@@ -275,7 +282,7 @@ static int argo_cvg_write_init(AVFormatContext *s)
         return AVERROR(EINVAL);
     }
 
-    if (par->channels != 1) {
+    if (par->ch_layout.nb_channels != 1) {
         av_log(s, AV_LOG_ERROR, "CVG files only support 1 channel\n");
         return AVERROR(EINVAL);
     }
@@ -301,10 +308,10 @@ static int argo_cvg_write_header(AVFormatContext *s)
     ArgoCVGMuxContext *ctx = s->priv_data;
 
     avio_wl32(s->pb, 0); /* Size, fixed later. */
-    avio_wl32(s->pb, 0);
-    avio_wl32(s->pb, 1);
+    avio_wl32(s->pb, !!ctx->loop);
+    avio_wl32(s->pb, !!ctx->reverb);
 
-    ctx->checksum = 1;
+    ctx->checksum = !!ctx->loop + !!ctx->reverb;
     ctx->size     = 8;
     return 0;
 }
@@ -335,22 +342,17 @@ static int argo_cvg_write_trailer(AVFormatContext *s)
     ArgoCVGMuxContext *ctx = s->priv_data;
     int64_t ret;
 
+    ctx->checksum +=  (ctx->size      & 255)
+                   + ((ctx->size>> 8) & 255)
+                   + ((ctx->size>>16) & 255)
+                   +  (ctx->size>>24);
+
     av_log(s, AV_LOG_TRACE, "size     = %zu\n", ctx->size);
     av_log(s, AV_LOG_TRACE, "checksum = %u\n",  ctx->checksum);
 
-    /*
-     * NB: This is wrong. We're always slightly under the original.
-     *     Verified by remuxing. For reference (orig - remuxed):
-     *     - TCLD.CVG:     4706074 - 4705696 = 378
-     *     - DANLOOP1.CVG: 5684641 - 5684212 = 429
-     *     - CRYS.CVG:     2495499 - 2495367 = 132
-     *     - PICKUP88.CVG: 1348091 - 1347937 = 154
-     *     - SELECT1.CVG:   549987 - 549752  = 235
-     *     Also NB: it doesn't matter, the game doesn't check them.
-     */
     avio_wl32(s->pb, ctx->checksum);
 
-    if ((ret = avio_seek(s->pb, 0, SEEK_SET) < 0))
+    if ((ret = avio_seek(s->pb, 0, SEEK_SET)) < 0)
         return ret;
 
     avio_wl32(s->pb, (uint32_t)ctx->size);
@@ -364,6 +366,26 @@ static const AVOption argo_cvg_options[] = {
         .offset      = offsetof(ArgoCVGMuxContext, skip_rate_check),
         .type        = AV_OPT_TYPE_BOOL,
         .default_val = {.i64 = 0},
+        .min         = 0,
+        .max         = 1,
+        .flags       = AV_OPT_FLAG_ENCODING_PARAM
+    },
+    {
+        .name        = "loop",
+        .help        = "set loop flag",
+        .offset      = offsetof(ArgoCVGMuxContext, loop),
+        .type        = AV_OPT_TYPE_BOOL,
+        .default_val = {.i64 = 0},
+        .min         = 0,
+        .max         = 1,
+        .flags       = AV_OPT_FLAG_ENCODING_PARAM
+    },
+        {
+        .name        = "reverb",
+        .help        = "set reverb flag",
+        .offset      = offsetof(ArgoCVGMuxContext, reverb),
+        .type        = AV_OPT_TYPE_BOOL,
+        .default_val = {.i64 = 1},
         .min         = 0,
         .max         = 1,
         .flags       = AV_OPT_FLAG_ENCODING_PARAM

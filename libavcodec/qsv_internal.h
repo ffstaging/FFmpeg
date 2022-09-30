@@ -39,7 +39,7 @@
 #include "libavutil/hwcontext_vaapi.h"
 #endif
 
-#include <mfx/mfxvideo.h>
+#include <mfxvideo.h>
 
 #include "libavutil/frame.h"
 
@@ -51,6 +51,9 @@
 #define ASYNC_DEPTH_DEFAULT 4       // internal parallelism
 
 #define QSV_MAX_ENC_PAYLOAD 2       // # of mfxEncodeCtrl payloads supported
+#define QSV_MAX_ENC_EXTPARAM 2
+
+#define QSV_MAX_ROI_NUM 256
 
 #define QSV_MAX_FRAME_EXT_PARAMS 4
 
@@ -61,6 +64,9 @@
 #define QSV_RUNTIME_VERSION_ATLEAST(MFX_VERSION, MAJOR, MINOR) \
     ((MFX_VERSION.Major > (MAJOR)) ||                           \
     (MFX_VERSION.Major == (MAJOR) && MFX_VERSION.Minor >= (MINOR)))
+
+#define QSV_ONEVPL       QSV_VERSION_ATLEAST(2, 0)
+#define QSV_HAVE_OPAQUE  !QSV_ONEVPL
 
 typedef struct QSVMid {
     AVBufferRef *hw_frames_ref;
@@ -83,6 +89,7 @@ typedef struct QSVFrame {
     int num_ext_params;
 
     mfxPayload *payloads[QSV_MAX_ENC_PAYLOAD]; ///< used for enc_ctrl.Payload
+    mfxExtBuffer *extparam[QSV_MAX_ENC_EXTPARAM]; ///< used for enc_ctrl.ExtParam
 
     int queued;
     int used;
@@ -96,6 +103,7 @@ typedef struct QSVSession {
     AVBufferRef *va_device_ref;
     AVHWDeviceContext *va_device_ctx;
 #endif
+    void *loader;
 } QSVSession;
 
 typedef struct QSVFramesContext {
@@ -146,5 +154,8 @@ int ff_qsv_find_surface_idx(QSVFramesContext *ctx, QSVFrame *frame);
 
 void ff_qsv_frame_add_ext_param(AVCodecContext *avctx, QSVFrame *frame,
                                 mfxExtBuffer *param);
+
+int ff_qsv_map_frame_to_surface(const AVFrame *frame, mfxFrameSurface1 *surface);
+
 
 #endif /* AVCODEC_QSV_INTERNAL_H */

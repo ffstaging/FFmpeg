@@ -21,6 +21,7 @@
 
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
+#include "libavutil/bprint.h"
 #include "libavutil/buffer.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
@@ -32,7 +33,6 @@
 #include "libavutil/pixdesc.h"
 #include "libavutil/rational.h"
 #include "libavutil/samplefmt.h"
-#include "libavutil/thread.h"
 
 #define FF_INTERNAL_FIELDS 1
 #include "framequeue.h"
@@ -44,11 +44,9 @@
 #include "framepool.h"
 #include "internal.h"
 
-#include "libavutil/ffversion.h"
-const char av_filter_ffversion[] = "FFmpeg version " FFMPEG_VERSION;
-
 static void tlog_ref(void *ctx, AVFrame *ref, int end)
 {
+#ifdef TRACE
     ff_tlog(ctx,
             "ref[%p buf:%p data:%p linesize[%d, %d, %d, %d] pts:%"PRId64" pos:%"PRId64,
             ref, ref->buf, ref->data[0],
@@ -65,33 +63,22 @@ static void tlog_ref(void *ctx, AVFrame *ref, int end)
                 av_get_picture_type_char(ref->pict_type));
     }
     if (ref->nb_samples) {
-        ff_tlog(ctx, " cl:%"PRId64"d n:%d r:%d",
-                ref->channel_layout,
+        AVBPrint bprint;
+
+        av_bprint_init(&bprint, 1, AV_BPRINT_SIZE_UNLIMITED);
+        av_channel_layout_describe_bprint(&ref->ch_layout, &bprint);
+        ff_tlog(ctx, " cl:%s n:%d r:%d",
+                bprint.str,
                 ref->nb_samples,
                 ref->sample_rate);
+        av_bprint_finalize(&bprint, NULL);
     }
 
     ff_tlog(ctx, "]%s", end ? "\n" : "");
+#endif
 }
 
-unsigned avfilter_version(void)
-{
-    av_assert0(LIBAVFILTER_VERSION_MICRO >= 100);
-    return LIBAVFILTER_VERSION_INT;
-}
-
-const char *avfilter_configuration(void)
-{
-    return FFMPEG_CONFIGURATION;
-}
-
-const char *avfilter_license(void)
-{
-#define LICENSE_PREFIX "libavfilter license: "
-    return &LICENSE_PREFIX FFMPEG_LICENSE[sizeof(LICENSE_PREFIX) - 1];
-}
-
-void ff_command_queue_pop(AVFilterContext *filter)
+static void command_queue_pop(AVFilterContext *filter)
 {
     AVFilterCommand *c= filter->command_queue;
     av_freep(&c->arg);
@@ -204,6 +191,7 @@ void avfilter_link_free(AVFilterLink **link)
 
     ff_framequeue_free(&(*link)->fifo);
     ff_frame_pool_uninit((FFFramePool**)&(*link)->frame_pool);
+    av_channel_layout_uninit(&(*link)->ch_layout);
 
     av_freep(link);
 }
@@ -393,6 +381,7 @@ int avfilter_config_links(AVFilterContext *filter)
     return 0;
 }
 
+#ifdef TRACE
 void ff_tlog_link(void *ctx, AVFilterLink *link, int end)
 {
     if (link->type == AVMEDIA_TYPE_VIDEO) {
@@ -405,7 +394,7 @@ void ff_tlog_link(void *ctx, AVFilterLink *link, int end)
                 end ? "\n" : "");
     } else {
         char buf[128];
-        av_get_channel_layout_string(buf, sizeof(buf), -1, link->channel_layout);
+        av_channel_layout_describe(&link->ch_layout, buf, sizeof(buf));
 
         ff_tlog(ctx,
                 "link[%p r:%d cl:%s fmt:%s %s->%s]%s",
@@ -416,6 +405,7 @@ void ff_tlog_link(void *ctx, AVFilterLink *link, int end)
                 end ? "\n" : "");
     }
 }
+#endif
 
 int ff_request_frame(AVFilterLink *link)
 {
@@ -790,7 +780,7 @@ void avfilter_free(AVFilterContext *filter)
     av_freep(&filter->outputs);
     av_freep(&filter->priv);
     while(filter->command_queue){
-        ff_command_queue_pop(filter);
+        command_queue_pop(filter);
     }
     av_opt_free(filter);
     av_expr_free(filter->enable);
@@ -860,16 +850,17 @@ static int process_options(AVFilterContext *ctx, AVDictionary **options,
                 return ret;
             }
         } else {
-            av_dict_set(options, key, value, 0);
-            if ((ret = av_opt_set(ctx->priv, key, value, AV_OPT_SEARCH_CHILDREN)) < 0) {
-                if (!av_opt_find(ctx->priv, key, NULL, 0, AV_OPT_SEARCH_CHILDREN | AV_OPT_SEARCH_FAKE_OBJ)) {
-                    if (ret == AVERROR_OPTION_NOT_FOUND)
-                        av_log(ctx, AV_LOG_ERROR, "Option '%s' not found\n", key);
-                    av_free(value);
-                    av_free(parsed_key);
-                    return ret;
-                }
+            o = av_opt_find(ctx->priv, key, NULL, 0,
+                            AV_OPT_SEARCH_CHILDREN | AV_OPT_SEARCH_FAKE_OBJ);
+            if (!o) {
+                av_log(ctx, AV_LOG_ERROR, "Option '%s' not found\n", key);
+                av_free(value);
+                av_free(parsed_key);
+                return AVERROR_OPTION_NOT_FOUND;
             }
+            av_dict_set(options, key, value,
+                        (o->type == AV_OPT_TYPE_FLAGS &&
+                         (value[0] == '-' || value[0] == '+')) ? AV_DICT_APPEND : 0);
         }
 
         av_free(value);
@@ -1036,11 +1027,7 @@ int ff_filter_frame(AVFilterLink *link, AVFrame *frame)
             av_log(link->dst, AV_LOG_ERROR, "Format change is not supported\n");
             goto error;
         }
-        if (frame->channels != link->channels) {
-            av_log(link->dst, AV_LOG_ERROR, "Channel count change is not supported\n");
-            goto error;
-        }
-        if (frame->channel_layout != link->channel_layout) {
+        if (av_channel_layout_compare(&frame->ch_layout, &link->ch_layout)) {
             av_log(link->dst, AV_LOG_ERROR, "Channel layout change is not supported\n");
             goto error;
         }
@@ -1117,7 +1104,7 @@ static int take_samples(AVFilterLink *link, unsigned min, unsigned max,
     for (i = 0; i < nb_frames; i++) {
         frame = ff_framequeue_take(&link->fifo);
         av_samples_copy(buf->extended_data, frame->extended_data, p, 0,
-                        frame->nb_samples, link->channels, link->format);
+                        frame->nb_samples, link->ch_layout.nb_channels, link->format);
         p += frame->nb_samples;
         av_frame_free(&frame);
     }
@@ -1125,7 +1112,7 @@ static int take_samples(AVFilterLink *link, unsigned min, unsigned max,
         unsigned n = nb_samples - p;
         frame = ff_framequeue_peek(&link->fifo, 0);
         av_samples_copy(buf->extended_data, frame->extended_data, p, 0, n,
-                        link->channels, link->format);
+                        link->ch_layout.nb_channels, link->format);
         ff_framequeue_skip_samples(&link->fifo, n, link->time_base);
     }
 
@@ -1507,7 +1494,7 @@ int ff_inlink_process_commands(AVFilterLink *link, const AVFrame *frame)
                "Processing command time:%f command:%s arg:%s\n",
                cmd->time, cmd->command, cmd->arg);
         avfilter_process_command(link->dst, cmd->command, cmd->arg, 0, 0, cmd->flags);
-        ff_command_queue_pop(link->dst);
+        command_queue_pop(link->dst);
         cmd= link->dst->command_queue;
     }
     return 0;
@@ -1558,6 +1545,14 @@ int ff_outlink_get_status(AVFilterLink *link)
 {
     return link->status_in;
 }
+
+int ff_inoutlink_check_flow(AVFilterLink *inlink, AVFilterLink *outlink)
+{
+    return ff_outlink_frame_wanted(outlink) ||
+           ff_inlink_check_available_frame(inlink) ||
+           inlink->status_out;
+}
+
 
 const AVClass *avfilter_get_class(void)
 {

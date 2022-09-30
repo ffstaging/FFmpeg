@@ -21,6 +21,7 @@
  */
 
 #include "config.h"
+#include "config_components.h"
 #include "videotoolbox.h"
 #include "libavutil/hwcontext_videotoolbox.h"
 #include "vt_internal.h"
@@ -29,6 +30,7 @@
 #include "libavutil/pixdesc.h"
 #include "bytestream.h"
 #include "decode.h"
+#include "internal.h"
 #include "h264dec.h"
 #include "hevcdec.h"
 #include "mpegvideo.h"
@@ -164,14 +166,13 @@ static int escape_ps(uint8_t* dst, const uint8_t* src, int src_size)
             src[i + 2] <= 0x03) {
             if (dst) {
                 *p++ = src[i++];
-                *p++ = src[i++];
+                *p++ = src[i];
                 *p++ = 0x03;
             } else {
-                i += 2;
+                i++;
             }
             size++;
-        }
-        if (dst)
+        } else if (dst)
             *p++ = src[i];
     }
 
@@ -245,7 +246,7 @@ CFDataRef ff_videotoolbox_hvcc_extradata_create(AVCodecContext *avctx)
     for (i = 0; i < HEVC_MAX_##T##PS_COUNT; i++) { \
         if (h->ps.t##ps_list[i]) { \
             const HEVC##T##PS *lps = (const HEVC##T##PS *)h->ps.t##ps_list[i]->data; \
-            vt_extradata_size += 2 + lps->data_size; \
+            vt_extradata_size += 2 + escape_ps(NULL, lps->data, lps->data_size); \
             num_##t##ps++; \
         } \
     }
@@ -272,7 +273,16 @@ CFDataRef ff_videotoolbox_hvcc_extradata_create(AVCodecContext *avctx)
                  ptlc.profile_idc);
 
     /* unsigned int(32) general_profile_compatibility_flags; */
-    memcpy(p + 2, ptlc.profile_compatibility_flag, 4);
+    for (i = 0; i < 4; i++) {
+        AV_W8(p + 2 + i, ptlc.profile_compatibility_flag[i * 8] << 7 |
+                         ptlc.profile_compatibility_flag[i * 8 + 1] << 6 |
+                         ptlc.profile_compatibility_flag[i * 8 + 2] << 5 |
+                         ptlc.profile_compatibility_flag[i * 8 + 3] << 4 |
+                         ptlc.profile_compatibility_flag[i * 8 + 4] << 3 |
+                         ptlc.profile_compatibility_flag[i * 8 + 5] << 2 |
+                         ptlc.profile_compatibility_flag[i * 8 + 6] << 1 |
+                         ptlc.profile_compatibility_flag[i * 8 + 7]);
+    }
 
     /* unsigned int(48) general_constraint_indicator_flags; */
     AV_W8(p + 6, ptlc.progressive_source_flag    << 7 |
@@ -318,13 +328,13 @@ CFDataRef ff_videotoolbox_hvcc_extradata_create(AVCodecContext *avctx)
      * bit(5) reserved = ‘11111’b;
      * unsigned int(3) bitDepthLumaMinus8;
      */
-    AV_W8(p + 17, (sps->bit_depth - 8) | 0xfc);
+    AV_W8(p + 17, (sps->bit_depth - 8) | 0xf8);
 
     /*
      * bit(5) reserved = ‘11111’b;
      * unsigned int(3) bitDepthChromaMinus8;
      */
-    AV_W8(p + 18, (sps->bit_depth_chroma - 8) | 0xfc);
+    AV_W8(p + 18, (sps->bit_depth_chroma - 8) | 0xf8);
 
     /* bit(16) avgFrameRate; */
     AV_WB16(p + 19, 0);
@@ -359,11 +369,11 @@ CFDataRef ff_videotoolbox_hvcc_extradata_create(AVCodecContext *avctx)
     for (i = 0; i < HEVC_MAX_##T##PS_COUNT; i++) { \
         if (h->ps.t##ps_list[i]) { \
             const HEVC##T##PS *lps = (const HEVC##T##PS *)h->ps.t##ps_list[i]->data; \
+            int size = escape_ps(p + 2, lps->data, lps->data_size); \
             /* unsigned int(16) nalUnitLength; */ \
-            AV_WB16(p, lps->data_size); \
+            AV_WB16(p, size); \
             /* bit(8*nalUnitLength) nalUnit; */ \
-            memcpy(p + 2, lps->data, lps->data_size); \
-            p += 2 + lps->data_size; \
+            p += 2 + size; \
         } \
     }
 
@@ -680,8 +690,7 @@ static void videotoolbox_decoder_callback(void *opaque,
                                           CMTime pts,
                                           CMTime duration)
 {
-    AVCodecContext *avctx = opaque;
-    VTContext *vtctx = avctx->internal->hwaccel_priv_data;
+    VTContext *vtctx = opaque;
 
     if (vtctx->frame) {
         CVPixelBufferRelease(vtctx->frame);
@@ -689,7 +698,8 @@ static void videotoolbox_decoder_callback(void *opaque,
     }
 
     if (!image_buffer) {
-        av_log(avctx, AV_LOG_DEBUG, "vt decoder cb: output image buffer is null\n");
+        av_log(vtctx->logctx, status ? AV_LOG_WARNING : AV_LOG_DEBUG,
+               "vt decoder cb: output image buffer is null: %i\n", status);
         return;
     }
 
@@ -939,7 +949,7 @@ static int videotoolbox_start(AVCodecContext *avctx)
                                                      videotoolbox->cv_pix_fmt_type);
 
     decoder_cb.decompressionOutputCallback = videotoolbox_decoder_callback;
-    decoder_cb.decompressionOutputRefCon   = avctx;
+    decoder_cb.decompressionOutputRefCon   = avctx->internal->hwaccel_priv_data;
 
     status = VTDecompressionSessionCreate(NULL,                      // allocator
                                           videotoolbox->cm_fmt_desc, // videoFormatDescription
@@ -1169,6 +1179,8 @@ int ff_videotoolbox_common_init(AVCodecContext *avctx)
     AVHWFramesContext *hw_frames;
     int err;
 
+    vtctx->logctx = avctx;
+
     // Old API - do nothing.
     if (avctx->hwaccel_context)
         return 0;
@@ -1365,8 +1377,6 @@ static AVVideotoolboxContext *av_videotoolbox_alloc_context_with_pix_fmt(enum AV
     AVVideotoolboxContext *ret = av_mallocz(sizeof(*ret));
 
     if (ret) {
-        ret->output_callback = videotoolbox_decoder_callback;
-
         OSType cv_pix_fmt_type = av_map_videotoolbox_format_from_pixfmt2(pix_fmt, full_range);
         if (cv_pix_fmt_type == 0) {
             cv_pix_fmt_type = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;

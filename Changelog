@@ -2,6 +2,47 @@ Entries are sorted chronologically from oldest to youngest within each release,
 releases are sorted from youngest to oldest.
 
 version <next>:
+- Radiance HDR image support
+- ddagrab (Desktop Duplication) video capture filter
+- ffmpeg -shortest_buf_duration option
+- ffmpeg now requires threading to be built
+- ffmpeg now runs every muxer in a separate thread
+- Add new mode to cropdetect filter to detect crop-area based on motion vectors and edges
+- VAAPI decoding and encoding for 10/12bit 422, 10/12bit 444 HEVC and VP9
+- WBMP (Wireless Application Protocol Bitmap) image format
+- a3dscope filter
+- bonk decoder and demuxer
+- Micronas SC-4 audio decoder
+- LAF demuxer
+- APAC decoder and demuxer
+- Media 100i decoders
+
+
+version 5.1:
+- add ipfs/ipns protocol support
+- dialogue enhance audio filter
+- dropped obsolete XvMC hwaccel
+- pcm-bluray encoder
+- DFPWM audio encoder/decoder and raw muxer/demuxer
+- SITI filter
+- Vizrt Binary Image encoder/decoder
+- avsynctest source filter
+- feedback video filter
+- pixelize video filter
+- colormap video filter
+- colorchart video source filter
+- multiply video filter
+- PGS subtitle frame merge bitstream filter
+- blurdetect filter
+- tiltshelf audio filter
+- QOI image format support
+- ffprobe -o option
+- virtualbass audio filter
+- VDPAU AV1 hwaccel
+- PHM image format support
+- remap_opencl filter
+- added chromakey_cuda filter
+- added bilateral_cuda filter
 
 
 version 5.0:

@@ -16,6 +16,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "avassert.h"
 #include "cpu.h"
 #include "qsort.h"
 #include "bprint.h"
@@ -44,7 +45,6 @@ int ff_tx_gen_compound_mapping(AVTXContext *s, int n, int m)
     int *in_map, *out_map;
     const int inv = s->inv;
     const int len = n*m;    /* Will not be equal to s->len for MDCTs */
-    const int mdct = TYPE_IS(MDCT, s->type);
     int m_inv, n_inv;
 
     /* Make sure the numbers are coprime */
@@ -63,8 +63,7 @@ int ff_tx_gen_compound_mapping(AVTXContext *s, int n, int m)
     /* Ruritanian map for input, CRT map for output, can be swapped */
     for (int j = 0; j < m; j++) {
         for (int i = 0; i < n; i++) {
-            /* Shifted by 1 to simplify MDCTs */
-            in_map[j*n + i] = ((i*m + j*n) % len) << mdct;
+            in_map[j*n + i] = (i*m + j*n) % len;
             out_map[(i*m*m_inv + j*n*n_inv) % len] = i*m + j;
         }
     }
@@ -207,23 +206,21 @@ static void parity_revtab_generator(int *revtab, int n, int inv, int offset,
                             1, 1, len >> 1, basis, dual_stride, inv_lookup);
 }
 
-int ff_tx_gen_split_radix_parity_revtab(AVTXContext *s, int invert_lookup,
-                                        int basis, int dual_stride)
+int ff_tx_gen_split_radix_parity_revtab(AVTXContext *s, int len, int inv,
+                                        int inv_lookup, int basis, int dual_stride)
 {
-    int len = s->len;
-    int inv = s->inv;
-
-    if (!(s->map = av_mallocz(len*sizeof(*s->map))))
-        return AVERROR(ENOMEM);
-
     basis >>= 1;
     if (len < basis)
         return AVERROR(EINVAL);
 
+    if (!(s->map = av_mallocz(len*sizeof(*s->map))))
+        return AVERROR(ENOMEM);
+
     av_assert0(!dual_stride || !(dual_stride & (dual_stride - 1)));
     av_assert0(dual_stride <= basis);
+
     parity_revtab_generator(s->map, len, inv, 0, 0, 0, len,
-                            basis, dual_stride, invert_lookup);
+                            basis, dual_stride, inv_lookup != 0);
 
     return 0;
 }
@@ -274,7 +271,7 @@ static void ff_tx_null(AVTXContext *s, void *_out, void *_in, ptrdiff_t stride)
 }
 
 static const FFTXCodelet ff_tx_null_def = {
-    .name       = "null",
+    .name       = NULL_IF_CONFIG_SMALL("null"),
     .function   = ff_tx_null,
     .type       = TX_TYPE_ANY,
     .flags      = AV_TX_UNALIGNED | FF_TX_ALIGNED |
@@ -292,6 +289,7 @@ static const FFTXCodelet * const ff_tx_null_list[] = {
     NULL,
 };
 
+#if !CONFIG_SMALL
 static void print_flags(AVBPrint *bp, uint64_t f)
 {
     int prev = 0;
@@ -313,6 +311,8 @@ static void print_flags(AVBPrint *bp, uint64_t f)
         av_bprintf(bp, "%spreshuf", prev > 1 ? sep : "");
     if ((f & AV_TX_FULL_IMDCT) && ++prev)
         av_bprintf(bp, "%simdct_full", prev > 1 ? sep : "");
+    if ((f & FF_TX_ASM_CALL) && ++prev)
+        av_bprintf(bp, "%sasm_call", prev > 1 ? sep : "");
     av_bprintf(bp, "]");
 }
 
@@ -370,6 +370,20 @@ static void print_cd_info(const FFTXCodelet *cd, int prio, int print_prio)
 
     av_log(NULL, AV_LOG_VERBOSE, "%s\n", bp.str);
 }
+
+static void print_tx_structure(AVTXContext *s, int depth)
+{
+    const FFTXCodelet *cd = s->cd_self;
+
+    for (int i = 0; i <= depth; i++)
+        av_log(NULL, AV_LOG_VERBOSE, "    ");
+
+    print_cd_info(cd, cd->prio, 0);
+
+    for (int i = 0; i < s->nb_sub; i++)
+        print_tx_structure(&s->sub[i], depth + 1);
+}
+#endif /* CONFIG_SMALL */
 
 typedef struct TXCodeletMatch {
     const FFTXCodelet *cd;
@@ -431,7 +445,9 @@ av_cold int ff_tx_init_subtx(AVTXContext *s, enum AVTXType type,
     TXCodeletMatch *cd_tmp, *cd_matches = NULL;
     unsigned int cd_matches_size = 0;
     int nb_cd_matches = 0;
+#if !CONFIG_SMALL
     AVBPrint bp = { 0 };
+#endif
 
     /* Array of all compiled codelet lists. Order is irrelevant. */
     const FFTXCodelet * const * const codelet_list[] = {
@@ -441,6 +457,9 @@ av_cold int ff_tx_init_subtx(AVTXContext *s, enum AVTXType type,
         ff_tx_null_list,
 #if HAVE_X86ASM
         ff_tx_codelet_list_float_x86,
+#endif
+#if ARCH_AARCH64
+        ff_tx_codelet_list_float_aarch64,
 #endif
     };
     int codelet_list_num = FF_ARRAY_ELEMS(codelet_list);
@@ -452,11 +471,20 @@ av_cold int ff_tx_init_subtx(AVTXContext *s, enum AVTXType type,
                           AV_CPU_FLAG_ATOM     | AV_CPU_FLAG_SSSE3SLOW |
                           AV_CPU_FLAG_AVXSLOW  | AV_CPU_FLAG_SLOW_GATHER;
 
+    static const int slow_penalties[][2] = {
+        { AV_CPU_FLAG_SSE2SLOW,    1 + 64  },
+        { AV_CPU_FLAG_SSE3SLOW,    1 + 64  },
+        { AV_CPU_FLAG_SSSE3SLOW,   1 + 64  },
+        { AV_CPU_FLAG_ATOM,        1 + 128 },
+        { AV_CPU_FLAG_AVXSLOW,     1 + 128 },
+        { AV_CPU_FLAG_SLOW_GATHER, 1 + 32  },
+    };
+
     /* Flags the transform wants */
     uint64_t req_flags = flags;
 
     /* Flags the codelet may require to be present */
-    uint64_t inv_req_mask = AV_TX_FULL_IMDCT | FF_TX_PRESHUFFLE;
+    uint64_t inv_req_mask = AV_TX_FULL_IMDCT | FF_TX_PRESHUFFLE | FF_TX_ASM_CALL;
 
     /* Unaligned codelets are compatible with the aligned flag */
     if (req_flags & FF_TX_ALIGNED)
@@ -518,8 +546,10 @@ av_cold int ff_tx_init_subtx(AVTXContext *s, enum AVTXType type,
 
             /* If the CPU has a SLOW flag, and the instruction is also flagged
              * as being slow for such, reduce its priority */
-            if ((cpu_flags & cd->cpu_flags) & slow_mask)
-                cd_matches[nb_cd_matches].prio -= 64;
+            for (int i = 0; i < FF_ARRAY_ELEMS(slow_penalties); i++) {
+                if ((cpu_flags & cd->cpu_flags) & slow_penalties[i][0])
+                    cd_matches[nb_cd_matches].prio -= slow_penalties[i][1];
+            }
 
             /* Prioritize aligned-only codelets */
             if ((cd->flags & FF_TX_ALIGNED) && !(cd->flags & AV_TX_UNALIGNED))
@@ -543,6 +573,7 @@ av_cold int ff_tx_init_subtx(AVTXContext *s, enum AVTXType type,
         }
     }
 
+#if !CONFIG_SMALL
     /* Print debugging info */
     av_bprint_init(&bp, 0, AV_BPRINT_SIZE_AUTOMATIC);
     av_bprintf(&bp, "For transform of length %i, %s, ", len,
@@ -552,6 +583,7 @@ av_cold int ff_tx_init_subtx(AVTXContext *s, enum AVTXType type,
     print_flags(&bp, flags);
     av_bprintf(&bp, ", found %i matches%s", nb_cd_matches,
                nb_cd_matches ? ":" : ".");
+#endif
 
     /* No matches found */
     if (!nb_cd_matches)
@@ -560,12 +592,14 @@ av_cold int ff_tx_init_subtx(AVTXContext *s, enum AVTXType type,
     /* Sort the list */
     AV_QSORT(cd_matches, nb_cd_matches, TXCodeletMatch, cmp_matches);
 
+#if !CONFIG_SMALL
     av_log(NULL, AV_LOG_VERBOSE, "%s\n", bp.str);
 
     for (int i = 0; i < nb_cd_matches; i++) {
         av_log(NULL, AV_LOG_VERBOSE, "    %i: ", i + 1);
         print_cd_info(cd_matches[i].cd, cd_matches[i].prio, 1);
     }
+#endif
 
     if (!s->sub) {
         s->sub = sub = av_mallocz(TX_MAX_SUB*sizeof(*sub));
@@ -583,7 +617,7 @@ av_cold int ff_tx_init_subtx(AVTXContext *s, enum AVTXType type,
         sctx->len        = len;
         sctx->inv        = inv;
         sctx->type       = type;
-        sctx->flags      = flags;
+        sctx->flags      = cd->flags | flags;
         sctx->cd_self    = cd;
 
         s->fn[s->nb_sub] = cd->function;
@@ -614,19 +648,6 @@ end:
     return ret;
 }
 
-static void print_tx_structure(AVTXContext *s, int depth)
-{
-    const FFTXCodelet *cd = s->cd_self;
-
-    for (int i = 0; i <= depth; i++)
-        av_log(NULL, AV_LOG_VERBOSE, "    ");
-
-    print_cd_info(cd, cd->prio, 0);
-
-    for (int i = 0; i < s->nb_sub; i++)
-        print_tx_structure(&s->sub[i], depth + 1);
-}
-
 av_cold int av_tx_init(AVTXContext **ctx, av_tx_fn *tx, enum AVTXType type,
                        int inv, int len, const void *scale, uint64_t flags)
 {
@@ -655,8 +676,10 @@ av_cold int av_tx_init(AVTXContext **ctx, av_tx_fn *tx, enum AVTXType type,
     *ctx = &tmp.sub[0];
     *tx  = tmp.fn[0];
 
+#if !CONFIG_SMALL
     av_log(NULL, AV_LOG_VERBOSE, "Transform tree:\n");
     print_tx_structure(*ctx, 0);
+#endif
 
     return ret;
 }

@@ -35,12 +35,13 @@
 #include "libavutil/float_dsp.h"
 #include "libavutil/opt.h"
 #include "avcodec.h"
+#include "codec_internal.h"
 #include "encode.h"
 #include "put_bits.h"
-#include "internal.h"
 #include "mpeg4audio.h"
 #include "sinewin.h"
 #include "profiles.h"
+#include "version.h"
 
 #include "aac.h"
 #include "aactab.h"
@@ -49,6 +50,279 @@
 #include "aacenc_utils.h"
 
 #include "psymodel.h"
+
+/**
+ * List of PCE (Program Configuration Element) for the channel layouts listed
+ * in channel_layout.h
+ *
+ * For those wishing in the future to add other layouts:
+ *
+ * - num_ele: number of elements in each group of front, side, back, lfe channels
+ *            (an element is of type SCE (single channel), CPE (channel pair) for
+ *            the first 3 groups; and is LFE for LFE group).
+ *
+ * - pairing: 0 for an SCE element or 1 for a CPE; does not apply to LFE group
+ *
+ * - index: there are three independent indices for SCE, CPE and LFE;
+ *     they are incremented irrespective of the group to which the element belongs;
+ *     they are not reset when going from one group to another
+ *
+ *     Example: for 7.0 channel layout,
+ *        .pairing = { { 1, 0 }, { 1 }, { 1 }, }, (3 CPE and 1 SCE in front group)
+ *        .index = { { 0, 0 }, { 1 }, { 2 }, },
+ *               (index is 0 for the single SCE but goes from 0 to 2 for the CPEs)
+ *
+ *     The index order impacts the channel ordering. But is otherwise arbitrary
+ *     (the sequence could have been 2, 0, 1 instead of 0, 1, 2).
+ *
+ *     Spec allows for discontinuous indices, e.g. if one has a total of two SCE,
+ *     SCE.0 SCE.15 is OK per spec; BUT it won't be decoded by our AAC decoder
+ *     which at this time requires that indices fully cover some range starting
+ *     from 0 (SCE.1 SCE.0 is OK but not SCE.0 SCE.15).
+ *
+ * - config_map: total number of elements and their types. Beware, the way the
+ *               types are ordered impacts the final channel ordering.
+ *
+ * - reorder_map: reorders the channels.
+ *
+ */
+static const AACPCEInfo aac_pce_configs[] = {
+    {
+        .layout = AV_CHANNEL_LAYOUT_MONO,
+        .num_ele = { 1, 0, 0, 0 },
+        .pairing = { { 0 }, },
+        .index = { { 0 }, },
+        .config_map = { 1, TYPE_SCE, },
+        .reorder_map = { 0 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_STEREO,
+        .num_ele = { 1, 0, 0, 0 },
+        .pairing = { { 1 }, },
+        .index = { { 0 }, },
+        .config_map = { 1, TYPE_CPE, },
+        .reorder_map = { 0, 1 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_2POINT1,
+        .num_ele = { 1, 0, 0, 1 },
+        .pairing = { { 1 }, },
+        .index = { { 0 },{ 0 },{ 0 },{ 0 } },
+        .config_map = { 2, TYPE_CPE, TYPE_LFE },
+        .reorder_map = { 0, 1, 2 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_2_1,
+        .num_ele = { 1, 0, 1, 0 },
+        .pairing = { { 1 },{ 0 },{ 0 } },
+        .index = { { 0 },{ 0 },{ 0 }, },
+        .config_map = { 2, TYPE_CPE, TYPE_SCE },
+        .reorder_map = { 0, 1, 2 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_SURROUND,
+        .num_ele = { 2, 0, 0, 0 },
+        .pairing = { { 1, 0 }, },
+        .index = { { 0, 0 }, },
+        .config_map = { 2, TYPE_CPE, TYPE_SCE, },
+        .reorder_map = { 0, 1, 2 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_3POINT1,
+        .num_ele = { 2, 0, 0, 1 },
+        .pairing = { { 1, 0 }, },
+        .index = { { 0, 0 }, { 0 }, { 0 }, { 0 }, },
+        .config_map = { 3, TYPE_CPE, TYPE_SCE, TYPE_LFE },
+        .reorder_map = { 0, 1, 2, 3 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_4POINT0,
+        .num_ele = { 2, 0, 1, 0 },
+        .pairing = { { 1, 0 }, { 0 }, { 0 }, },
+        .index = { { 0, 0 }, { 0 }, { 1 } },
+        .config_map = { 3, TYPE_CPE, TYPE_SCE, TYPE_SCE },
+        .reorder_map = {  0, 1, 2, 3 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_4POINT1,
+        .num_ele = { 2, 1, 1, 0 },
+        .pairing = { { 1, 0 }, { 0 }, { 0 }, },
+        .index = { { 0, 0 }, { 1 }, { 2 }, { 0 } },
+        .config_map = { 4, TYPE_CPE, TYPE_SCE, TYPE_SCE, TYPE_SCE },
+        .reorder_map = { 0, 1, 2, 3, 4 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_2_2,
+        .num_ele = { 1, 1, 0, 0 },
+        .pairing = { { 1 }, { 1 }, },
+        .index = { { 0 }, { 1 }, },
+        .config_map = { 2, TYPE_CPE, TYPE_CPE },
+        .reorder_map = { 0, 1, 2, 3 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_QUAD,
+        .num_ele = { 1, 0, 1, 0 },
+        .pairing = { { 1 }, { 0 }, { 1 }, },
+        .index = { { 0 }, { 0 }, { 1 } },
+        .config_map = { 2, TYPE_CPE, TYPE_CPE },
+        .reorder_map = { 0, 1, 2, 3 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_5POINT0,
+        .num_ele = { 2, 1, 0, 0 },
+        .pairing = { { 1, 0 }, { 1 }, },
+        .index = { { 0, 0 }, { 1 } },
+        .config_map = { 3, TYPE_CPE, TYPE_SCE, TYPE_CPE },
+        .reorder_map = { 0, 1, 2, 3, 4 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_5POINT1,
+        .num_ele = { 2, 1, 1, 0 },
+        .pairing = { { 1, 0 }, { 0 }, { 1 }, },
+        .index = { { 0, 0 }, { 1 }, { 1 } },
+        .config_map = { 4, TYPE_CPE, TYPE_SCE, TYPE_SCE, TYPE_CPE },
+        .reorder_map = { 0, 1, 2, 3, 4, 5 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_5POINT0_BACK,
+        .num_ele = { 2, 0, 1, 0 },
+        .pairing = { { 1, 0 }, { 0 }, { 1 } },
+        .index = { { 0, 0 }, { 0 }, { 1 } },
+        .config_map = { 3, TYPE_CPE, TYPE_SCE, TYPE_CPE },
+        .reorder_map = { 0, 1, 2, 3, 4 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_5POINT1_BACK,
+        .num_ele = { 2, 1, 1, 0 },
+        .pairing = { { 1, 0 }, { 0 }, { 1 }, },
+        .index = { { 0, 0 }, { 1 }, { 1 } },
+        .config_map = { 4, TYPE_CPE, TYPE_SCE, TYPE_SCE, TYPE_CPE },
+        .reorder_map = { 0, 1, 2, 3, 4, 5 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_6POINT0,
+        .num_ele = { 2, 1, 1, 0 },
+        .pairing = { { 1, 0 }, { 1 }, { 0 }, },
+        .index = { { 0, 0 }, { 1 }, { 1 } },
+        .config_map = { 4, TYPE_CPE, TYPE_SCE, TYPE_CPE, TYPE_SCE },
+        .reorder_map = { 0, 1, 2, 3, 4, 5 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_6POINT0_FRONT,
+        .num_ele = { 2, 1, 0, 0 },
+        .pairing = { { 1, 1 }, { 1 } },
+        .index = { { 1, 0 }, { 2 }, },
+        .config_map = { 3, TYPE_CPE, TYPE_CPE, TYPE_CPE, },
+        .reorder_map = { 0, 1, 2, 3, 4, 5 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_HEXAGONAL,
+        .num_ele = { 2, 0, 2, 0 },
+        .pairing = { { 1, 0 },{ 0 },{ 1, 0 }, },
+        .index = { { 0, 0 },{ 0 },{ 1, 1 } },
+        .config_map = { 4, TYPE_CPE, TYPE_SCE, TYPE_CPE, TYPE_SCE, },
+        .reorder_map = { 0, 1, 2, 3, 4, 5 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_6POINT1,
+        .num_ele = { 2, 1, 2, 0 },
+        .pairing = { { 1, 0 },{ 0 },{ 1, 0 }, },
+        .index = { { 0, 0 },{ 1 },{ 1, 2 } },
+        .config_map = { 5, TYPE_CPE, TYPE_SCE, TYPE_SCE, TYPE_CPE, TYPE_SCE },
+        .reorder_map = { 0, 1, 2, 3, 4, 5, 6 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_6POINT1_BACK,
+        .num_ele = { 2, 1, 2, 0 },
+        .pairing = { { 1, 0 }, { 0 }, { 1, 0 }, },
+        .index = { { 0, 0 }, { 1 }, { 1, 2 } },
+        .config_map = { 5, TYPE_CPE, TYPE_SCE, TYPE_SCE, TYPE_CPE, TYPE_SCE },
+        .reorder_map = { 0, 1, 2, 3, 4, 5, 6 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_6POINT1_FRONT,
+        .num_ele = { 2, 1, 2, 0 },
+        .pairing = { { 1, 0 }, { 0 }, { 1, 0 }, },
+        .index = { { 0, 0 }, { 1 }, { 1, 2 } },
+        .config_map = { 5, TYPE_CPE, TYPE_SCE, TYPE_SCE, TYPE_CPE, TYPE_SCE },
+        .reorder_map = { 0, 1, 2, 3, 4, 5, 6 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_7POINT0,
+        .num_ele = { 2, 1, 1, 0 },
+        .pairing = { { 1, 0 }, { 1 }, { 1 }, },
+        .index = { { 0, 0 }, { 1 }, { 2 }, },
+        .config_map = { 4, TYPE_CPE, TYPE_SCE, TYPE_CPE, TYPE_CPE },
+        .reorder_map = { 0, 1, 2, 3, 4, 5, 6 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_7POINT0_FRONT,
+        .num_ele = { 2, 1, 1, 0 },
+        .pairing = { { 1, 0 }, { 1 }, { 1 }, },
+        .index = { { 0, 0 }, { 1 }, { 2 }, },
+        .config_map = { 4, TYPE_CPE, TYPE_SCE, TYPE_CPE, TYPE_CPE },
+        .reorder_map = { 0, 1, 2, 3, 4, 5, 6 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_7POINT1,
+        .num_ele = { 2, 1, 2, 0 },
+        .pairing = { { 1, 0 }, { 0 }, { 1, 1 }, },
+        .index = { { 0, 0 }, { 1 }, { 1, 2 }, { 0 } },
+        .config_map = { 5, TYPE_CPE, TYPE_SCE,  TYPE_SCE, TYPE_CPE, TYPE_CPE },
+        .reorder_map = { 0, 1, 2, 3, 4, 5, 6, 7 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_7POINT1_WIDE,
+        .num_ele = { 2, 1, 2, 0 },
+        .pairing = { { 1, 0 }, { 0 },{  1, 1 }, },
+        .index = { { 0, 0 }, { 1 }, { 1, 2 }, { 0 } },
+        .config_map = { 5, TYPE_CPE, TYPE_SCE, TYPE_SCE, TYPE_CPE, TYPE_CPE },
+        .reorder_map = { 0, 1, 2, 3, 4, 5, 6, 7 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_7POINT1_WIDE_BACK,
+        .num_ele = { 2, 1, 2, 0 },
+        .pairing = { { 1, 0 }, { 0 }, { 1, 1 }, },
+        .index = { { 0, 0 }, { 1 }, { 1, 2 }, { 0 } },
+        .config_map = { 5, TYPE_CPE, TYPE_SCE, TYPE_SCE, TYPE_CPE, TYPE_CPE },
+        .reorder_map = { 0, 1, 2, 3, 4, 5, 6, 7 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_OCTAGONAL,
+        .num_ele = { 2, 1, 2, 0 },
+        .pairing = { { 1, 0 }, { 1 }, { 1, 0 }, },
+        .index = { { 0, 0 }, { 1 }, { 2, 1 } },
+        .config_map = { 5, TYPE_CPE, TYPE_SCE, TYPE_CPE, TYPE_CPE, TYPE_SCE },
+        .reorder_map = { 0, 1, 2, 3, 4, 5, 6, 7 },
+    },
+    {   /* Meant for order 2/mixed ambisonics */
+        .layout = { .order = AV_CHANNEL_ORDER_NATIVE, .nb_channels = 9,
+                    .u.mask = AV_CH_LAYOUT_OCTAGONAL | AV_CH_TOP_CENTER },
+        .num_ele = { 2, 2, 2, 0 },
+        .pairing = { { 1, 0 }, { 1, 0 }, { 1, 0 }, },
+        .index = { { 0, 0 }, { 1, 1 }, { 2, 2 } },
+        .config_map = { 6, TYPE_CPE, TYPE_SCE, TYPE_CPE, TYPE_SCE, TYPE_CPE, TYPE_SCE },
+        .reorder_map = { 0, 1, 2, 3, 4, 5, 6, 7, 8 },
+    },
+    {   /* Meant for order 2/mixed ambisonics */
+        .layout = { .order = AV_CHANNEL_ORDER_NATIVE, .nb_channels = 10,
+                    .u.mask = AV_CH_LAYOUT_6POINT0_FRONT | AV_CH_BACK_CENTER |
+                              AV_CH_BACK_LEFT | AV_CH_BACK_RIGHT | AV_CH_TOP_CENTER },
+        .num_ele = { 2, 2, 2, 0 },
+        .pairing = { { 1, 1 }, { 1, 0 }, { 1, 0 }, },
+        .index = { { 0, 1 }, { 2, 0 }, { 3, 1 } },
+        .config_map = { 6, TYPE_CPE, TYPE_CPE, TYPE_CPE, TYPE_SCE, TYPE_CPE, TYPE_SCE },
+        .reorder_map = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 },
+    },
+    {
+        .layout = AV_CHANNEL_LAYOUT_HEXADECAGONAL,
+        .num_ele = { 4, 2, 4, 0 },
+        .pairing = { { 1, 0, 1, 0 }, { 1, 1 }, { 1, 0, 1, 0 }, },
+        .index = { { 0, 0, 1, 1 }, { 2, 3 }, { 4, 2, 5, 3 } },
+        .config_map = { 10, TYPE_CPE, TYPE_SCE, TYPE_CPE, TYPE_SCE, TYPE_CPE, TYPE_CPE, TYPE_CPE, TYPE_SCE, TYPE_CPE, TYPE_SCE },
+        .reorder_map = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 },
+    },
+};
 
 static void put_pce(PutBitContext *pb, AVCodecContext *avctx)
 {
@@ -962,11 +1236,11 @@ static av_cold int aac_encode_init(AVCodecContext *avctx)
     s->lambda = avctx->global_quality > 0 ? avctx->global_quality : 120;
 
     /* Channel map and unspecified bitrate guessing */
-    s->channels = avctx->channels;
+    s->channels = avctx->ch_layout.nb_channels;
 
     s->needs_pce = 1;
     for (i = 0; i < FF_ARRAY_ELEMS(aac_normal_chan_layouts); i++) {
-        if (avctx->channel_layout == aac_normal_chan_layouts[i]) {
+        if (!av_channel_layout_compare(&avctx->ch_layout, &aac_normal_chan_layouts[i])) {
             s->needs_pce = s->options.pce;
             break;
         }
@@ -975,10 +1249,13 @@ static av_cold int aac_encode_init(AVCodecContext *avctx)
     if (s->needs_pce) {
         char buf[64];
         for (i = 0; i < FF_ARRAY_ELEMS(aac_pce_configs); i++)
-            if (avctx->channel_layout == aac_pce_configs[i].layout)
+            if (!av_channel_layout_compare(&avctx->ch_layout, &aac_pce_configs[i].layout))
                 break;
-        av_get_channel_layout_string(buf, sizeof(buf), -1, avctx->channel_layout);
-        ERROR_IF(i == FF_ARRAY_ELEMS(aac_pce_configs), "Unsupported channel layout \"%s\"\n", buf);
+        av_channel_layout_describe(&avctx->ch_layout, buf, sizeof(buf));
+        if (i == FF_ARRAY_ELEMS(aac_pce_configs)) {
+            av_log(avctx, AV_LOG_ERROR, "Unsupported channel layout \"%s\"\n", buf);
+            return AVERROR(EINVAL);
+        }
         av_log(avctx, AV_LOG_INFO, "Using a PCE to encode channel layout \"%s\"\n", buf);
         s->pce = aac_pce_configs[i];
         s->reorder_map = s->pce.reorder_map;
@@ -1092,11 +1369,13 @@ static av_cold int aac_encode_init(AVCodecContext *avctx)
     s->abs_pow34   = abs_pow34_v;
     s->quant_bands = quantize_bands;
 
-    if (ARCH_X86)
-        ff_aac_dsp_init_x86(s);
+#if ARCH_X86
+    ff_aac_dsp_init_x86(s);
+#endif
 
-    if (HAVE_MIPSDSP)
-        ff_aac_coder_init_mips(s);
+#if HAVE_MIPSDSP
+    ff_aac_coder_init_mips(s);
+#endif
 
     ff_af_queue_init(avctx, &s->afq);
     ff_aac_tableinit();
@@ -1128,25 +1407,26 @@ static const AVClass aacenc_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-static const AVCodecDefault aac_encode_defaults[] = {
+static const FFCodecDefault aac_encode_defaults[] = {
     { "b", "0" },
     { NULL }
 };
 
-const AVCodec ff_aac_encoder = {
-    .name           = "aac",
-    .long_name      = NULL_IF_CONFIG_SMALL("AAC (Advanced Audio Coding)"),
-    .type           = AVMEDIA_TYPE_AUDIO,
-    .id             = AV_CODEC_ID_AAC,
+const FFCodec ff_aac_encoder = {
+    .p.name         = "aac",
+    CODEC_LONG_NAME("AAC (Advanced Audio Coding)"),
+    .p.type         = AVMEDIA_TYPE_AUDIO,
+    .p.id           = AV_CODEC_ID_AAC,
+    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY |
+                      AV_CODEC_CAP_SMALL_LAST_FRAME,
     .priv_data_size = sizeof(AACEncContext),
     .init           = aac_encode_init,
-    .encode2        = aac_encode_frame,
+    FF_CODEC_ENCODE_CB(aac_encode_frame),
     .close          = aac_encode_end,
     .defaults       = aac_encode_defaults,
-    .supported_samplerates = ff_mpeg4audio_sample_rates,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
-    .capabilities   = AV_CODEC_CAP_SMALL_LAST_FRAME | AV_CODEC_CAP_DELAY,
-    .sample_fmts    = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_FLTP,
+    .p.supported_samplerates = ff_mpeg4audio_sample_rates,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
+    .p.sample_fmts  = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_FLTP,
                                                      AV_SAMPLE_FMT_NONE },
-    .priv_class     = &aacenc_class,
+    .p.priv_class   = &aacenc_class,
 };

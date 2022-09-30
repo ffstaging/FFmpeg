@@ -35,10 +35,11 @@
 #include "aandcttab.h"
 #include "avcodec.h"
 #include "bytestream.h"
+#include "codec_internal.h"
+#include "decode.h"
 #include "eaidct.h"
 #include "get_bits.h"
 #include "idctdsp.h"
-#include "internal.h"
 
 typedef struct TgqContext {
     AVCodecContext *avctx;
@@ -200,14 +201,12 @@ static void tgq_calculate_qtable(TgqContext *s, int quant)
                                     ff_inv_aanscales[j * 8 + i]) >> (14 - 4);
 }
 
-static int tgq_decode_frame(AVCodecContext *avctx,
-                            void *data, int *got_frame,
-                            AVPacket *avpkt)
+static int tgq_decode_frame(AVCodecContext *avctx, AVFrame *frame,
+                            int *got_frame, AVPacket *avpkt)
 {
     const uint8_t *buf = avpkt->data;
     int buf_size       = avpkt->size;
     TgqContext *s      = avctx->priv_data;
-    AVFrame *frame     = data;
     int x, y, ret;
     int big_endian;
 
@@ -247,14 +246,13 @@ static int tgq_decode_frame(AVCodecContext *avctx,
     return avpkt->size;
 }
 
-const AVCodec ff_eatgq_decoder = {
-    .name           = "eatgq",
-    .long_name      = NULL_IF_CONFIG_SMALL("Electronic Arts TGQ video"),
-    .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = AV_CODEC_ID_TGQ,
+const FFCodec ff_eatgq_decoder = {
+    .p.name         = "eatgq",
+    CODEC_LONG_NAME("Electronic Arts TGQ video"),
+    .p.type         = AVMEDIA_TYPE_VIDEO,
+    .p.id           = AV_CODEC_ID_TGQ,
     .priv_data_size = sizeof(TgqContext),
     .init           = tgq_decode_init,
-    .decode         = tgq_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    FF_CODEC_DECODE_CB(tgq_decode_frame),
+    .p.capabilities = AV_CODEC_CAP_DR1,
 };

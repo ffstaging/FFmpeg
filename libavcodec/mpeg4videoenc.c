@@ -24,12 +24,18 @@
 #include "libavutil/log.h"
 #include "libavutil/opt.h"
 #include "libavutil/thread.h"
+#include "codec_internal.h"
 #include "mpegutils.h"
 #include "mpegvideo.h"
 #include "h263.h"
+#include "h263enc.h"
 #include "mpeg4video.h"
 #include "mpeg4videodata.h"
+#include "mpeg4videodefs.h"
+#include "mpeg4videoenc.h"
+#include "mpegvideoenc.h"
 #include "profiles.h"
+#include "version.h"
 
 /* The uni_DCtab_* tables below contain unified bits+length tables to encode DC
  * differences in MPEG-4. Unified in the sense that the specification specifies
@@ -561,8 +567,6 @@ void ff_mpeg4_encode_mb(MpegEncContext *s, int16_t block[6][64],
             if (!mb_type) {
                 av_assert2(s->mv_dir & MV_DIRECT);
                 ff_h263_encode_motion_vector(s, motion_x, motion_y, 1);
-                s->b_count++;
-                s->f_count++;
             } else {
                 av_assert2(mb_type > 0 && mb_type < 4);
                 if (s->mv_type != MV_TYPE_FIELD) {
@@ -575,7 +579,6 @@ void ff_mpeg4_encode_mb(MpegEncContext *s, int16_t block[6][64],
                         s->last_mv[0][1][0] = s->mv[0][0][0];
                         s->last_mv[0][0][1] =
                         s->last_mv[0][1][1] = s->mv[0][0][1];
-                        s->f_count++;
                     }
                     if (s->mv_dir & MV_DIR_BACKWARD) {
                         ff_h263_encode_motion_vector(s,
@@ -586,7 +589,6 @@ void ff_mpeg4_encode_mb(MpegEncContext *s, int16_t block[6][64],
                         s->last_mv[1][1][0] = s->mv[1][0][0];
                         s->last_mv[1][0][1] =
                         s->last_mv[1][1][1] = s->mv[1][0][1];
-                        s->b_count++;
                     }
                 } else {
                     if (s->mv_dir & MV_DIR_FORWARD) {
@@ -606,7 +608,6 @@ void ff_mpeg4_encode_mb(MpegEncContext *s, int16_t block[6][64],
                             s->last_mv[0][i][0] = s->mv[0][i][0];
                             s->last_mv[0][i][1] = s->mv[0][i][1] * 2;
                         }
-                        s->f_count++;
                     }
                     if (s->mv_dir & MV_DIR_BACKWARD) {
                         for (i = 0; i < 2; i++) {
@@ -617,7 +618,6 @@ void ff_mpeg4_encode_mb(MpegEncContext *s, int16_t block[6][64],
                             s->last_mv[1][i][0] = s->mv[1][i][0];
                             s->last_mv[1][i][1] = s->mv[1][i][1] * 2;
                         }
-                        s->b_count++;
                     }
                 }
             }
@@ -640,17 +640,17 @@ void ff_mpeg4_encode_mb(MpegEncContext *s, int16_t block[6][64],
                 if (s->max_b_frames > 0) {
                     int i;
                     int x, y, offset;
-                    uint8_t *p_pic;
+                    const uint8_t *p_pic;
 
                     x = s->mb_x * 16;
                     y = s->mb_y * 16;
 
                     offset = x + y * s->linesize;
-                    p_pic  = s->new_picture.f->data[0] + offset;
+                    p_pic  = s->new_picture->data[0] + offset;
 
                     s->mb_skipped = 1;
                     for (i = 0; i < s->max_b_frames; i++) {
-                        uint8_t *b_pic;
+                        const uint8_t *b_pic;
                         int diff;
                         Picture *pic = s->reordered_input_picture[i + 1];
 
@@ -793,8 +793,6 @@ void ff_mpeg4_encode_mb(MpegEncContext *s, int16_t block[6][64],
 
             if (interleaved_stats)
                 s->p_tex_bits += get_bits_diff(s);
-
-            s->f_count++;
         }
     } else {
         int cbp;
@@ -1065,9 +1063,9 @@ int ff_mpeg4_encode_picture_header(MpegEncContext *s, int picture_number)
 
     if (s->pict_type == AV_PICTURE_TYPE_I) {
         if (!(s->avctx->flags & AV_CODEC_FLAG_GLOBAL_HEADER)) {
-            if (s->strict_std_compliance < FF_COMPLIANCE_VERY_STRICT)  // HACK, the reference sw is buggy
+            if (s->avctx->strict_std_compliance < FF_COMPLIANCE_VERY_STRICT)  // HACK, the reference sw is buggy
                 mpeg4_encode_visual_object_header(s);
-            if (s->strict_std_compliance < FF_COMPLIANCE_VERY_STRICT || picture_number == 0)  // HACK, the reference sw is buggy
+            if (s->avctx->strict_std_compliance < FF_COMPLIANCE_VERY_STRICT || picture_number == 0)  // HACK, the reference sw is buggy
                 mpeg4_encode_vol_header(s, 0, 0);
         }
         if (!(s->workaround_bugs & FF_BUG_MS))
@@ -1084,8 +1082,8 @@ int ff_mpeg4_encode_picture_header(MpegEncContext *s, int picture_number)
     time_mod  = FFUMOD(s->time, s->avctx->time_base.den);
     time_incr = time_div - s->last_time_base;
 
-    // This limits the frame duration to max 1 hour
-    if (time_incr > 3600) {
+    // This limits the frame duration to max 1 day
+    if (time_incr > 3600*24) {
         av_log(s->avctx, AV_LOG_ERROR, "time_incr %"PRIu64" too large\n", time_incr);
         return AVERROR(EINVAL);
     }
@@ -1382,10 +1380,7 @@ static const AVOption options[] = {
       OFFSET(mpeg_quant), AV_OPT_TYPE_INT, {.i64 = 0 }, 0, 1, VE },
     FF_MPV_COMMON_BFRAME_OPTS
     FF_MPV_COMMON_OPTS
-#if FF_API_MPEGVIDEO_OPTS
-    FF_MPV_DEPRECATED_A53_CC_OPT
-    FF_MPV_DEPRECATED_MATRIX_OPT
-#endif
+    FF_MPV_COMMON_MOTION_EST_OPTS
     FF_MPEG4_PROFILE_OPTS
     { NULL },
 };
@@ -1397,17 +1392,17 @@ static const AVClass mpeg4enc_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const AVCodec ff_mpeg4_encoder = {
-    .name           = "mpeg4",
-    .long_name      = NULL_IF_CONFIG_SMALL("MPEG-4 part 2"),
-    .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = AV_CODEC_ID_MPEG4,
+const FFCodec ff_mpeg4_encoder = {
+    .p.name         = "mpeg4",
+    CODEC_LONG_NAME("MPEG-4 part 2"),
+    .p.type         = AVMEDIA_TYPE_VIDEO,
+    .p.id           = AV_CODEC_ID_MPEG4,
     .priv_data_size = sizeof(MpegEncContext),
     .init           = encode_init,
-    .encode2        = ff_mpv_encode_picture,
+    FF_CODEC_ENCODE_CB(ff_mpv_encode_picture),
     .close          = ff_mpv_encode_end,
-    .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE },
-    .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_SLICE_THREADS,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
-    .priv_class     = &mpeg4enc_class,
+    .p.pix_fmts     = (const enum AVPixelFormat[]) { AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE },
+    .p.capabilities = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_SLICE_THREADS,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
+    .p.priv_class   = &mpeg4enc_class,
 };

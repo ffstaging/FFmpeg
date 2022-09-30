@@ -26,16 +26,19 @@
 
 #define BITSTREAM_READER_LE
 
-#include "config.h"
+#include "config_components.h"
 #include "libavutil/attributes.h"
 #include "libavutil/mem_internal.h"
 
 #include "avcodec.h"
+#include "blockdsp.h"
+#include "codec_internal.h"
+#include "decode.h"
 #include "get_bits.h"
-#include "internal.h"
+#include "idctdsp.h"
 #include "libavutil/thread.h"
 #include "mathops.h"
-#include "mpeg12.h"
+#include "mpeg12dec.h"
 #include "mpeg12data.h"
 #include "mpeg12vlc.h"
 
@@ -485,19 +488,17 @@ static void compute_quant_matrix(int *output, int qscale)
     for (i = 0; i < 64; i++) output[i] = unscaled_quant_matrix[ff_zigzag_direct[i]] * qscale;
 }
 
-static int speedhq_decode_frame(AVCodecContext *avctx,
-                                void *data, int *got_frame,
-                                AVPacket *avpkt)
+static int speedhq_decode_frame(AVCodecContext *avctx, AVFrame *frame,
+                                int *got_frame, AVPacket *avpkt)
 {
     SHQContext * const s = avctx->priv_data;
     const uint8_t *buf   = avpkt->data;
     int buf_size         = avpkt->size;
-    AVFrame *frame       = data;
     uint8_t quality;
     uint32_t second_field_offset;
     int ret;
 
-    if (buf_size < 4 || avctx->width < 8)
+    if (buf_size < 4 || avctx->width < 8 || avctx->width % 8 != 0)
         return AVERROR_INVALIDDATA;
 
     quality = buf[0];
@@ -664,7 +665,7 @@ static av_cold int speedhq_decode_init(AVCodecContext *avctx)
     if (ret)
         return AVERROR_UNKNOWN;
 
-    ff_blockdsp_init(&s->bdsp, avctx);
+    ff_blockdsp_init(&s->bdsp);
     ff_idctdsp_init(&s->idsp, avctx);
     ff_init_scantable(s->idsp.idct_permutation, &s->intra_scantable, ff_zigzag_direct);
 
@@ -722,15 +723,14 @@ static av_cold int speedhq_decode_init(AVCodecContext *avctx)
     return 0;
 }
 
-const AVCodec ff_speedhq_decoder = {
-    .name           = "speedhq",
-    .long_name      = NULL_IF_CONFIG_SMALL("NewTek SpeedHQ"),
-    .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = AV_CODEC_ID_SPEEDHQ,
+const FFCodec ff_speedhq_decoder = {
+    .p.name         = "speedhq",
+    CODEC_LONG_NAME("NewTek SpeedHQ"),
+    .p.type         = AVMEDIA_TYPE_VIDEO,
+    .p.id           = AV_CODEC_ID_SPEEDHQ,
     .priv_data_size = sizeof(SHQContext),
     .init           = speedhq_decode_init,
-    .decode         = speedhq_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    FF_CODEC_DECODE_CB(speedhq_decode_frame),
+    .p.capabilities = AV_CODEC_CAP_DR1,
 };
 #endif /* CONFIG_SPEEDHQ_DECODER */

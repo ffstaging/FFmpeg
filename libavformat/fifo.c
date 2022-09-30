@@ -28,6 +28,7 @@
 #include "libavutil/threadmessage.h"
 #include "avformat.h"
 #include "internal.h"
+#include "mux.h"
 
 #define FIFO_DEFAULT_QUEUE_SIZE              60
 #define FIFO_DEFAULT_MAX_RECOVERY_ATTEMPTS   0
@@ -504,13 +505,9 @@ static int fifo_mux_init(AVFormatContext *avf, const AVOutputFormat *oformat,
     avf2->flags = avf->flags;
 
     for (i = 0; i < avf->nb_streams; ++i) {
-        AVStream *st = avformat_new_stream(avf2, NULL);
+        AVStream *st = ff_stream_clone(avf2, avf->streams[i]);
         if (!st)
             return AVERROR(ENOMEM);
-
-        ret = ff_stream_encode_params_copy(st, avf->streams[i]);
-        if (ret < 0)
-            return ret;
     }
 
     return 0;

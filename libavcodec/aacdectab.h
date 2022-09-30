@@ -72,7 +72,8 @@ static const uint8_t aac_channel_layout_map[16][16][3] = {
     /* TODO: Add 7+1 TOP configuration */
 };
 
-static const uint64_t aac_channel_layout[16] = {
+#if FF_API_OLD_CHANNEL_LAYOUT
+static const uint64_t aac_channel_layout[] = {
     AV_CH_LAYOUT_MONO,
     AV_CH_LAYOUT_STEREO,
     AV_CH_LAYOUT_SURROUND,
@@ -80,14 +81,27 @@ static const uint64_t aac_channel_layout[16] = {
     AV_CH_LAYOUT_5POINT0_BACK,
     AV_CH_LAYOUT_5POINT1_BACK,
     AV_CH_LAYOUT_7POINT1_WIDE_BACK,
-    0,
-    0,
-    0,
     AV_CH_LAYOUT_6POINT1,
     AV_CH_LAYOUT_7POINT1,
     AV_CH_LAYOUT_22POINT2,
     0,
     /* AV_CH_LAYOUT_7POINT1_TOP, */
+};
+#endif
+
+static const AVChannelLayout aac_ch_layout[] = {
+    AV_CHANNEL_LAYOUT_MONO,
+    AV_CHANNEL_LAYOUT_STEREO,
+    AV_CHANNEL_LAYOUT_SURROUND,
+    AV_CHANNEL_LAYOUT_4POINT0,
+    AV_CHANNEL_LAYOUT_5POINT0_BACK,
+    AV_CHANNEL_LAYOUT_5POINT1_BACK,
+    AV_CHANNEL_LAYOUT_7POINT1_WIDE_BACK,
+    AV_CHANNEL_LAYOUT_6POINT1,
+    AV_CHANNEL_LAYOUT_7POINT1,
+    AV_CHANNEL_LAYOUT_22POINT2,
+    { 0 },
+    /* AV_CHANNEL_LAYOUT_7POINT1_TOP, */
 };
 
 #endif /* AVCODEC_AACDECTAB_H */

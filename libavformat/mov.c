@@ -1532,13 +1532,12 @@ static int mov_read_mvhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     avio_rb32(pb); /* current time */
     avio_rb32(pb); /* next track ID */
 
-    av_log(c->fc, AV_LOG_TRACE, "poster_time = %i, time_scale = %i\n", poster_time, c->time_scale);
-    if(poster_time && c->time_scale && c->time_scale > 0) {
+    if(c->poster_time_location && poster_time && c->time_scale && c->time_scale > 0) {
+        av_log(c->fc, AV_LOG_TRACE, "poster_time = %i, time_scale = %i\n", poster_time, c->time_scale);
         char buffer[32];
-        float poster_time_location = (float)poster_time / c->time_scale;
-        snprintf(buffer, sizeof(buffer), "%.2f", poster_time_location);
-        /* This will appear as a TAG in the format section of FFProbe output using -show_format */
-        av_dict_set(&c->fc->metadata, "poster_time", buffer, 0);
+        int poster_time_location = poster_time / c->time_scale;
+        snprintf(buffer, sizeof(buffer), "%i", poster_time_location);
+        av_dict_set(&c->fc->metadata, "poster_time_location", buffer, 0);
     }
 
     return 0;
@@ -8558,7 +8557,7 @@ static const AVOption mov_options[] = {
     { "enable_drefs", "Enable external track support.", OFFSET(enable_drefs), AV_OPT_TYPE_BOOL,
         {.i64 = 0}, 0, 1, FLAGS },
     { "max_stts_delta", "treat offsets above this value as invalid", OFFSET(max_stts_delta), AV_OPT_TYPE_INT, {.i64 = UINT_MAX-48000*10 }, 0, UINT_MAX, .flags = AV_OPT_FLAG_DECODING_PARAM },
-
+    { "poster_time_location", "Export the poster time location.", OFFSET(poster_time_location), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS | AV_OPT_FLAG_EXPORT },
     { NULL },
 };
 

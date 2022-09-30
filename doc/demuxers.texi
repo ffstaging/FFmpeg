@@ -733,6 +733,12 @@ error or used to store a negative value for dts correction when treated as signe
 the user set an upper limit, beyond which the delta is clamped to 1. Values greater than the limit if negative when
 cast to int32 are used to adjust onward dts.
 
+@item poster_time_location
+Export the poster_time_location if available.
+The poster_time_location is calculated using the poster_time / time_scale = X seconds.
+The value of poster_time_location indicates where in the video the poster frame is.
+Default is false.
+
 Unit is the track time scale. Range is 0 to UINT_MAX. Default is @code{UINT_MAX - 48000*10} which allows upto
 a 10 second dts correction for 48 kHz audio streams while accommodating 99.9% of @code{uint32} range.
 @end table

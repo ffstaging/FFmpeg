@@ -108,9 +108,6 @@ enum FFCodecType {
     /* The codec is an encoder using the encode callback;
      * audio and video codecs only. */
     FF_CODEC_CB_TYPE_ENCODE,
-    /* The codec is an encoder using the encode_sub callback;
-     * subtitle codecs only. */
-    FF_CODEC_CB_TYPE_ENCODE_SUB,
     /* The codec is an encoder using the receive_packet callback;
      * audio and video codecs only. */
     FF_CODEC_CB_TYPE_RECEIVE_PACKET,
@@ -214,12 +211,6 @@ typedef struct FFCodec {
         int (*encode)(struct AVCodecContext *avctx, struct AVPacket *avpkt,
                       const struct AVFrame *frame, int *got_packet_ptr);
         /**
-         * Encode subtitles to a raw buffer.
-         * cb is in this state if cb_type is FF_CODEC_CB_TYPE_ENCODE_SUB.
-         */
-        int (*encode_sub)(struct AVCodecContext *avctx, uint8_t *buf,
-                          int buf_size, const struct AVSubtitle *sub);
-        /**
          * Encode API with decoupled frame/packet dataflow.
          * cb is in this state if cb_type is FF_CODEC_CB_TYPE_RECEIVE_PACKET.
          *
@@ -307,9 +298,6 @@ typedef struct FFCodec {
 #define FF_CODEC_ENCODE_CB(func)                          \
     .cb_type           = FF_CODEC_CB_TYPE_ENCODE,         \
     .cb.encode         = (func)
-#define FF_CODEC_ENCODE_SUB_CB(func)                      \
-    .cb_type           = FF_CODEC_CB_TYPE_ENCODE_SUB,     \
-    .cb.encode_sub     = (func)
 #define FF_CODEC_RECEIVE_PACKET_CB(func)                  \
     .cb_type           = FF_CODEC_CB_TYPE_RECEIVE_PACKET, \
     .cb.receive_packet = (func)

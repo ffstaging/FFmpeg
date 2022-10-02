@@ -109,7 +109,6 @@ int main(void){
             is_decoder = 1;
             break;
         case FF_CODEC_CB_TYPE_ENCODE:
-        case FF_CODEC_CB_TYPE_ENCODE_SUB:
         case FF_CODEC_CB_TYPE_RECEIVE_PACKET:
             is_encoder = 1;
             break;
@@ -125,15 +124,13 @@ int main(void){
 #define CHECK(TYPE, type) (codec2->cb_type == FF_CODEC_CB_TYPE_ ## TYPE && !codec2->cb.type)
         if (CHECK(DECODE, decode) || CHECK(DECODE_SUB, decode_sub) ||
             CHECK(RECEIVE_PACKET, receive_packet) ||
-            CHECK(ENCODE, encode) || CHECK(ENCODE_SUB, encode_sub) ||
+            CHECK(ENCODE, encode) ||
             CHECK(RECEIVE_FRAME, receive_frame)) {
             ERR_EXT("Codec %s does not implement its %s callback.\n",
                     is_decoder ? "decoding" : "encoding");
         }
 #undef CHECK
         if (is_encoder) {
-            if ((codec->type == AVMEDIA_TYPE_SUBTITLE) != (codec2->cb_type == FF_CODEC_CB_TYPE_ENCODE_SUB))
-                ERR("Encoder %s is both subtitle encoder and not subtitle encoder.");
             if (codec2->update_thread_context || codec2->update_thread_context_for_user || codec2->bsfs)
                 ERR("Encoder %s has decoder-only thread functions or bsf.\n");
             if (codec->type == AVMEDIA_TYPE_AUDIO) {

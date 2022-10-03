@@ -32,6 +32,7 @@
 
 
 #include "aac_defines.h"
+#include "libavutil/channel_layout.h"
 #include "libavutil/float_dsp.h"
 #include "libavutil/fixed_dsp.h"
 #include "libavutil/mem_internal.h"
@@ -125,8 +126,7 @@ typedef struct OutputConfiguration {
     MPEG4AudioConfig m4ac;
     uint8_t layout_map[MAX_ELEM_ID*4][3];
     int layout_map_tags;
-    int channels;
-    uint64_t channel_layout;
+    AVChannelLayout ch_layout;
     enum OCStatus status;
 } OutputConfiguration;
 
@@ -288,6 +288,11 @@ typedef struct ChannelElement {
     SpectralBandReplication sbr;
 } ChannelElement;
 
+enum AACOutputChannelOrder {
+    CHANNEL_ORDER_DEFAULT,
+    CHANNEL_ORDER_CODED,
+};
+
 /**
  * main AAC context
  */
@@ -352,6 +357,8 @@ struct AACContext {
     int dmono_mode;      ///< 0->not dmono, 1->use first channel, 2->use second channel
     /** @} */
 
+    enum AACOutputChannelOrder output_channel_order;
+
     DECLARE_ALIGNED(32, INTFLOAT, temp)[128];
 
     OutputConfiguration oc[2];
@@ -359,6 +366,7 @@ struct AACContext {
     int warned_960_sbr;
     unsigned warned_71_wide;
     int warned_gain_control;
+    int warned_he_aac_mono;
 
     /* aacdec functions pointers */
     void (*imdct_and_windowing)(AACContext *ac, SingleChannelElement *sce);

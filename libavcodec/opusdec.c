@@ -43,9 +43,8 @@
 #include "libswresample/swresample.h"
 
 #include "avcodec.h"
-#include "get_bits.h"
-#include "internal.h"
-#include "mathops.h"
+#include "codec_internal.h"
+#include "decode.h"
 #include "opus.h"
 #include "opustab.h"
 #include "opus_celt.h"
@@ -411,11 +410,10 @@ finish:
     return output_samples;
 }
 
-static int opus_decode_packet(AVCodecContext *avctx, void *data,
+static int opus_decode_packet(AVCodecContext *avctx, AVFrame *frame,
                               int *got_frame_ptr, AVPacket *avpkt)
 {
     OpusContext *c      = avctx->priv_data;
-    AVFrame *frame      = data;
     const uint8_t *buf  = avpkt->data;
     int buf_size        = avpkt->size;
     int coded_samples   = 0;
@@ -458,7 +456,7 @@ static int opus_decode_packet(AVCodecContext *avctx, void *data,
         return ret;
     frame->nb_samples = 0;
 
-    for (i = 0; i < avctx->channels; i++) {
+    for (i = 0; i < avctx->ch_layout.nb_channels; i++) {
         ChannelMap *map = &c->channel_maps[i];
         if (!map->copy)
             c->streams[map->stream_idx].out[map->channel_idx] = (float*)frame->extended_data[i];
@@ -541,7 +539,7 @@ static int opus_decode_packet(AVCodecContext *avctx, void *data,
         }
     }
 
-    for (i = 0; i < avctx->channels; i++) {
+    for (i = 0; i < avctx->ch_layout.nb_channels; i++) {
         ChannelMap *map = &c->channel_maps[i];
 
         /* handle copied channels */
@@ -642,7 +640,7 @@ static av_cold int opus_decode_init(AVCodecContext *avctx)
 
     for (i = 0; i < c->nb_streams; i++) {
         OpusStreamContext *s = &c->streams[i];
-        uint64_t layout;
+        AVChannelLayout layout;
 
         s->output_channels = (i < c->nb_stereo_streams) ? 2 : 1;
 
@@ -660,11 +658,12 @@ static av_cold int opus_decode_init(AVCodecContext *avctx)
         if (!s->swr)
             return AVERROR(ENOMEM);
 
-        layout = (s->output_channels == 1) ? AV_CH_LAYOUT_MONO : AV_CH_LAYOUT_STEREO;
+        layout = (s->output_channels == 1) ? (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO :
+                                             (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
         av_opt_set_int(s->swr, "in_sample_fmt",      avctx->sample_fmt,  0);
         av_opt_set_int(s->swr, "out_sample_fmt",     avctx->sample_fmt,  0);
-        av_opt_set_int(s->swr, "in_channel_layout",  layout,             0);
-        av_opt_set_int(s->swr, "out_channel_layout", layout,             0);
+        av_opt_set_chlayout(s->swr, "in_chlayout",   &layout,            0);
+        av_opt_set_chlayout(s->swr, "out_chlayout",  &layout,            0);
         av_opt_set_int(s->swr, "out_sample_rate",    avctx->sample_rate, 0);
         av_opt_set_int(s->swr, "filter_size",        16,                 0);
 
@@ -704,17 +703,17 @@ static const AVClass opus_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const AVCodec ff_opus_decoder = {
-    .name            = "opus",
-    .long_name       = NULL_IF_CONFIG_SMALL("Opus"),
-    .priv_class      = &opus_class,
-    .type            = AVMEDIA_TYPE_AUDIO,
-    .id              = AV_CODEC_ID_OPUS,
+const FFCodec ff_opus_decoder = {
+    .p.name          = "opus",
+    CODEC_LONG_NAME("Opus"),
+    .p.priv_class    = &opus_class,
+    .p.type          = AVMEDIA_TYPE_AUDIO,
+    .p.id            = AV_CODEC_ID_OPUS,
     .priv_data_size  = sizeof(OpusContext),
     .init            = opus_decode_init,
     .close           = opus_decode_close,
-    .decode          = opus_decode_packet,
+    FF_CODEC_DECODE_CB(opus_decode_packet),
     .flush           = opus_decode_flush,
-    .capabilities    = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY | AV_CODEC_CAP_CHANNEL_CONF,
-    .caps_internal   = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
+    .p.capabilities  = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY | AV_CODEC_CAP_CHANNEL_CONF,
+    .caps_internal   = FF_CODEC_CAP_INIT_CLEANUP,
 };

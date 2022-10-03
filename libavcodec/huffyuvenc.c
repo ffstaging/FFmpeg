@@ -28,12 +28,14 @@
  * huffyuv encoder
  */
 
+#include "config_components.h"
+
 #include "avcodec.h"
+#include "codec_internal.h"
 #include "encode.h"
 #include "huffyuv.h"
 #include "huffman.h"
 #include "huffyuvencdsp.h"
-#include "internal.h"
 #include "lossless_videoencdsp.h"
 #include "put_bits.h"
 #include "libavutil/opt.h"
@@ -117,7 +119,7 @@ static inline void sub_left_prediction_bgr32(HYuvContext *s, uint8_t *dst,
 }
 
 static inline void sub_left_prediction_rgb24(HYuvContext *s, uint8_t *dst,
-                                             uint8_t *src, int w,
+                                             const uint8_t *src, int w,
                                              int *red, int *green, int *blue)
 {
     int i;
@@ -787,7 +789,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
             y++; cy++;
 
             for (; y < height; y++,cy++) {
-                uint8_t *ydst, *udst, *vdst;
+                const uint8_t *ydst, *udst, *vdst;
 
                 if (s->bitstream_bpp == 12) {
                     while (2 * cy > y) {
@@ -810,7 +812,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
             }
         } else {
             for (cy = y = 1; y < height; y++, cy++) {
-                uint8_t *ydst, *udst, *vdst;
+                const uint8_t *ydst, *udst, *vdst;
 
                 /* encode a luma only line & y++ */
                 if (s->bitstream_bpp == 12) {
@@ -850,7 +852,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
             }
         }
     } else if(avctx->pix_fmt == AV_PIX_FMT_RGB32) {
-        uint8_t *data = p->data[0] + (height - 1) * p->linesize[0];
+        const uint8_t *data = p->data[0] + (height - 1) * p->linesize[0];
         const int stride = -p->linesize[0];
         const int fake_stride = -fake_ystride;
         int y;
@@ -866,7 +868,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         encode_bgra_bitstream(s, width - 1, 4);
 
         for (y = 1; y < s->height; y++) {
-            uint8_t *dst = data + y*stride;
+            const uint8_t *dst = data + y*stride;
             if (s->predictor == PLANE && s->interlaced < y) {
                 s->llvidencdsp.diff_bytes(s->temp[1], dst, dst - fake_stride, width * 4);
                 sub_left_prediction_bgr32(s, s->temp[0], s->temp[1], width,
@@ -878,7 +880,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
             encode_bgra_bitstream(s, width, 4);
         }
     } else if (avctx->pix_fmt == AV_PIX_FMT_RGB24) {
-        uint8_t *data = p->data[0] + (height - 1) * p->linesize[0];
+        const uint8_t *data = p->data[0] + (height - 1) * p->linesize[0];
         const int stride = -p->linesize[0];
         const int fake_stride = -fake_ystride;
         int y;
@@ -894,7 +896,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         encode_bgra_bitstream(s, width-1, 3);
 
         for (y = 1; y < s->height; y++) {
-            uint8_t *dst = data + y * stride;
+            const uint8_t *dst = data + y * stride;
             if (s->predictor == PLANE && s->interlaced < y) {
                 s->llvidencdsp.diff_bytes(s->temp[1], dst, dst - fake_stride,
                                       width * 3);
@@ -937,7 +939,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                 lefttop = p->data[plane][0];
 
                 for (; y < h; y++) {
-                    uint8_t *dst = p->data[plane] + p->linesize[plane] * y;
+                    const uint8_t *dst = p->data[plane] + p->linesize[plane] * y;
 
                     sub_median_prediction(s, s->temp[0], dst - fake_stride, dst, w , &left, &lefttop);
 
@@ -945,7 +947,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                 }
             } else {
                 for (y = 1; y < h; y++) {
-                    uint8_t *dst = p->data[plane] + p->linesize[plane] * y;
+                    const uint8_t *dst = p->data[plane] + p->linesize[plane] * y;
 
                     if (s->predictor == PLANE && s->interlaced < y) {
                         diff_bytes(s, s->temp[1], dst, dst - fake_stride, w);
@@ -1047,38 +1049,37 @@ static const AVClass ff_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const AVCodec ff_huffyuv_encoder = {
-    .name           = "huffyuv",
-    .long_name      = NULL_IF_CONFIG_SMALL("Huffyuv / HuffYUV"),
-    .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = AV_CODEC_ID_HUFFYUV,
+const FFCodec ff_huffyuv_encoder = {
+    .p.name         = "huffyuv",
+    CODEC_LONG_NAME("Huffyuv / HuffYUV"),
+    .p.type         = AVMEDIA_TYPE_VIDEO,
+    .p.id           = AV_CODEC_ID_HUFFYUV,
+    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
     .priv_data_size = sizeof(HYuvContext),
     .init           = encode_init,
-    .encode2        = encode_frame,
+    FF_CODEC_ENCODE_CB(encode_frame),
     .close          = encode_end,
-    .capabilities   = AV_CODEC_CAP_FRAME_THREADS,
-    .priv_class     = &normal_class,
-    .pix_fmts       = (const enum AVPixelFormat[]){
+    .p.priv_class   = &normal_class,
+    .p.pix_fmts     = (const enum AVPixelFormat[]){
         AV_PIX_FMT_YUV422P, AV_PIX_FMT_RGB24,
         AV_PIX_FMT_RGB32, AV_PIX_FMT_NONE
     },
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
-                      FF_CODEC_CAP_INIT_CLEANUP,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };
 
 #if CONFIG_FFVHUFF_ENCODER
-const AVCodec ff_ffvhuff_encoder = {
-    .name           = "ffvhuff",
-    .long_name      = NULL_IF_CONFIG_SMALL("Huffyuv FFmpeg variant"),
-    .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = AV_CODEC_ID_FFVHUFF,
+const FFCodec ff_ffvhuff_encoder = {
+    .p.name         = "ffvhuff",
+    CODEC_LONG_NAME("Huffyuv FFmpeg variant"),
+    .p.type         = AVMEDIA_TYPE_VIDEO,
+    .p.id           = AV_CODEC_ID_FFVHUFF,
+    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
     .priv_data_size = sizeof(HYuvContext),
     .init           = encode_init,
-    .encode2        = encode_frame,
+    FF_CODEC_ENCODE_CB(encode_frame),
     .close          = encode_end,
-    .capabilities   = AV_CODEC_CAP_FRAME_THREADS,
-    .priv_class     = &ff_class,
-    .pix_fmts       = (const enum AVPixelFormat[]){
+    .p.priv_class   = &ff_class,
+    .p.pix_fmts     = (const enum AVPixelFormat[]){
         AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUV422P, AV_PIX_FMT_YUV444P, AV_PIX_FMT_YUV411P,
         AV_PIX_FMT_YUV410P, AV_PIX_FMT_YUV440P,
         AV_PIX_FMT_GBRP,
@@ -1095,7 +1096,6 @@ const AVCodec ff_ffvhuff_encoder = {
         AV_PIX_FMT_RGB24,
         AV_PIX_FMT_RGB32, AV_PIX_FMT_NONE
     },
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
-                      FF_CODEC_CAP_INIT_CLEANUP,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };
 #endif

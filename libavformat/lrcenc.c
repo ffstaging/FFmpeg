@@ -27,6 +27,7 @@
 #include "internal.h"
 #include "lrc.h"
 #include "metadata.h"
+#include "mux.h"
 #include "version.h"
 #include "libavutil/dict.h"
 #include "libavutil/log.h"
@@ -104,7 +105,7 @@ static int lrc_write_packet(AVFormatContext *s, AVPacket *pkt)
                     size--;
                 next_line++;
             }
-            if(line[0] == '[') {
+            if (size && line[0] == '[') {
                 av_log(s, AV_LOG_WARNING,
                        "Subtitle starts with '[', may cause problems with LRC format.\n");
             }

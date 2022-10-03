@@ -113,15 +113,6 @@ cglobal diff_bytes, 4,5,2, dst, src1, src2, w
     REP_RET
 %endmacro
 
-%if ARCH_X86_32
-INIT_MMX mmx
-DIFF_BYTES_PROLOGUE
-    %define regsize mmsize
-    DIFF_BYTES_LOOP_PREP .skip_main_aa, .end_aa
-    DIFF_BYTES_BODY    a, a
-%undef i
-%endif
-
 INIT_XMM sse2
 DIFF_BYTES_PROLOGUE
     %define regsize mmsize
@@ -154,7 +145,7 @@ DIFF_BYTES_PROLOGUE
 
 
 ;--------------------------------------------------------------------------------------------------
-;void sub_left_predict(uint8_t *dst, uint8_t *src, ptrdiff_t stride, ptrdiff_t width, int height)
+;void sub_left_predict(uint8_t *dst, const uint8_t *src, ptrdiff_t stride, ptrdiff_t width, int height)
 ;--------------------------------------------------------------------------------------------------
 
 INIT_XMM avx

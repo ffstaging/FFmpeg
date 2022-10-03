@@ -28,14 +28,14 @@
 
 #include "avcodec.h"
 #include "bswapdsp.h"
+#include "codec_internal.h"
 #include "encode.h"
 #include "put_bits.h"
 #include "put_golomb.h"
-#include "internal.h"
 #include "lpc.h"
 #include "flac.h"
 #include "flacdata.h"
-#include "flacdsp.h"
+#include "flacencdsp.h"
 
 #define FLAC_SUBFRAME_CONSTANT  0
 #define FLAC_SUBFRAME_VERBATIM  1
@@ -124,7 +124,7 @@ typedef struct FlacEncodeContext {
     uint8_t *md5_buffer;
     unsigned int md5_buffer_size;
     BswapDSPContext bdsp;
-    FLACDSPContext flac_dsp;
+    FLACEncDSPContext flac_dsp;
 
     int flushed;
     int64_t next_pts;
@@ -154,6 +154,34 @@ static void write_streaminfo(FlacEncodeContext *s, uint8_t *header)
     put_bits(&pb, 12,  s->sample_count & 0x000000FFFLL);
     flush_put_bits(&pb);
     memcpy(&header[18], s->md5sum, 16);
+}
+
+
+/**
+ * Calculate an estimate for the maximum frame size based on verbatim mode.
+ * @param blocksize block size, in samples
+ * @param ch number of channels
+ * @param bps bits-per-sample
+ */
+static int flac_get_max_frame_size(int blocksize, int ch, int bps)
+{
+    /* Technically, there is no limit to FLAC frame size, but an encoder
+       should not write a frame that is larger than if verbatim encoding mode
+       were to be used. */
+
+    int count;
+
+    count = 16;                  /* frame header */
+    count += ch * ((7+bps+7)/8); /* subframe headers */
+    if (ch == 2) {
+        /* for stereo, need to account for using decorrelation */
+        count += (( 2*bps+1) * blocksize + 7) / 8;
+    } else {
+        count += ( ch*bps    * blocksize + 7) / 8;
+    }
+    count += 2; /* frame footer */
+
+    return count;
 }
 
 
@@ -241,7 +269,7 @@ static av_cold void dprint_compression_options(FlacEncodeContext *s)
 static av_cold int flac_encode_init(AVCodecContext *avctx)
 {
     int freq = avctx->sample_rate;
-    int channels = avctx->channels;
+    int channels = avctx->ch_layout.nb_channels;
     FlacEncodeContext *s = avctx->priv_data;
     int i, level, ret;
     uint8_t *streaminfo;
@@ -378,9 +406,9 @@ static av_cold int flac_encode_init(AVCodecContext *avctx)
     s->max_blocksize = s->avctx->frame_size;
 
     /* set maximum encoded frame size in verbatim mode */
-    s->max_framesize = ff_flac_get_max_frame_size(s->avctx->frame_size,
-                                                  s->channels,
-                                                  s->avctx->bits_per_raw_sample);
+    s->max_framesize = flac_get_max_frame_size(s->avctx->frame_size,
+                                               s->channels,
+                                               s->avctx->bits_per_raw_sample);
 
     /* initialize MD5 context */
     s->md5ctx = av_md5_alloc();
@@ -398,18 +426,18 @@ static av_cold int flac_encode_init(AVCodecContext *avctx)
     s->frame_count   = 0;
     s->min_framesize = s->max_framesize;
 
-    if (channels == 3 &&
-            avctx->channel_layout != (AV_CH_LAYOUT_STEREO|AV_CH_FRONT_CENTER) ||
-        channels == 4 &&
-            avctx->channel_layout != AV_CH_LAYOUT_2_2 &&
-            avctx->channel_layout != AV_CH_LAYOUT_QUAD ||
-        channels == 5 &&
-            avctx->channel_layout != AV_CH_LAYOUT_5POINT0 &&
-            avctx->channel_layout != AV_CH_LAYOUT_5POINT0_BACK ||
-        channels == 6 &&
-            avctx->channel_layout != AV_CH_LAYOUT_5POINT1 &&
-            avctx->channel_layout != AV_CH_LAYOUT_5POINT1_BACK) {
-        if (avctx->channel_layout) {
+    if ((channels == 3 &&
+         av_channel_layout_compare(&avctx->ch_layout, &(AVChannelLayout)AV_CHANNEL_LAYOUT_SURROUND)) ||
+        (channels == 4 &&
+         av_channel_layout_compare(&avctx->ch_layout, &(AVChannelLayout)AV_CHANNEL_LAYOUT_2_2) &&
+         av_channel_layout_compare(&avctx->ch_layout, &(AVChannelLayout)AV_CHANNEL_LAYOUT_QUAD)) ||
+        (channels == 5 &&
+         av_channel_layout_compare(&avctx->ch_layout, &(AVChannelLayout)AV_CHANNEL_LAYOUT_5POINT0) &&
+         av_channel_layout_compare(&avctx->ch_layout, &(AVChannelLayout)AV_CHANNEL_LAYOUT_5POINT0_BACK)) ||
+        (channels == 6 &&
+         av_channel_layout_compare(&avctx->ch_layout, &(AVChannelLayout)AV_CHANNEL_LAYOUT_5POINT1) &&
+         av_channel_layout_compare(&avctx->ch_layout, &(AVChannelLayout)AV_CHANNEL_LAYOUT_5POINT1_BACK))) {
+        if (avctx->ch_layout.order != AV_CHANNEL_ORDER_UNSPEC) {
             av_log(avctx, AV_LOG_ERROR, "Channel layout not supported by Flac, "
                                              "output stream will have incorrect "
                                              "channel layout.\n");
@@ -424,8 +452,7 @@ static av_cold int flac_encode_init(AVCodecContext *avctx)
                       s->options.max_prediction_order, FF_LPC_TYPE_LEVINSON);
 
     ff_bswapdsp_init(&s->bdsp);
-    ff_flacdsp_init(&s->flac_dsp, avctx->sample_fmt, channels,
-                    avctx->bits_per_raw_sample);
+    ff_flacencdsp_init(&s->flac_dsp);
 
     dprint_compression_options(s);
 
@@ -1354,9 +1381,9 @@ static int flac_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
 
     /* change max_framesize for small final frame */
     if (frame->nb_samples < s->frame.blocksize) {
-        s->max_framesize = ff_flac_get_max_frame_size(frame->nb_samples,
-                                                      s->channels,
-                                                      avctx->bits_per_raw_sample);
+        s->max_framesize = flac_get_max_frame_size(frame->nb_samples,
+                                                   s->channels,
+                                                   avctx->bits_per_raw_sample);
     }
 
     init_frame(s, frame->nb_samples);
@@ -1457,20 +1484,20 @@ static const AVClass flac_encoder_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const AVCodec ff_flac_encoder = {
-    .name           = "flac",
-    .long_name      = NULL_IF_CONFIG_SMALL("FLAC (Free Lossless Audio Codec)"),
-    .type           = AVMEDIA_TYPE_AUDIO,
-    .id             = AV_CODEC_ID_FLAC,
-    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY |
+const FFCodec ff_flac_encoder = {
+    .p.name         = "flac",
+    CODEC_LONG_NAME("FLAC (Free Lossless Audio Codec)"),
+    .p.type         = AVMEDIA_TYPE_AUDIO,
+    .p.id           = AV_CODEC_ID_FLAC,
+    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY |
                       AV_CODEC_CAP_SMALL_LAST_FRAME,
     .priv_data_size = sizeof(FlacEncodeContext),
     .init           = flac_encode_init,
-    .encode2        = flac_encode_frame,
+    FF_CODEC_ENCODE_CB(flac_encode_frame),
     .close          = flac_encode_close,
-    .sample_fmts    = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
+    .p.sample_fmts  = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
                                                      AV_SAMPLE_FMT_S32,
                                                      AV_SAMPLE_FMT_NONE },
-    .priv_class     = &flac_encoder_class,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
+    .p.priv_class   = &flac_encoder_class,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };

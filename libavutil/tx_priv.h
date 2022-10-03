@@ -27,8 +27,10 @@
 #ifdef TX_FLOAT
 #define TX_TAB(x) x ## _float
 #define TX_NAME(x) x ## _float_c
-#define TX_NAME_STR(x) x "_float_c"
+#define TX_NAME_STR(x) NULL_IF_CONFIG_SMALL(x "_float_c")
 #define TX_TYPE(x) AV_TX_FLOAT_ ## x
+#define TX_FN_NAME(fn, suffix) ff_tx_ ## fn ## _float_ ## suffix
+#define TX_FN_NAME_STR(fn, suffix) NULL_IF_CONFIG_SMALL(#fn "_float_" #suffix)
 #define MULT(x, m) ((x) * (m))
 #define SCALE_TYPE float
 typedef float TXSample;
@@ -36,8 +38,10 @@ typedef AVComplexFloat TXComplex;
 #elif defined(TX_DOUBLE)
 #define TX_TAB(x) x ## _double
 #define TX_NAME(x) x ## _double_c
-#define TX_NAME_STR(x) x "_double_c"
+#define TX_NAME_STR(x) NULL_IF_CONFIG_SMALL(x "_double_c")
 #define TX_TYPE(x) AV_TX_DOUBLE_ ## x
+#define TX_FN_NAME(fn, suffix) ff_tx_ ## fn ## _double_ ## suffix
+#define TX_FN_NAME_STR(fn, suffix) NULL_IF_CONFIG_SMALL(#fn "_double_" #suffix)
 #define MULT(x, m) ((x) * (m))
 #define SCALE_TYPE double
 typedef double TXSample;
@@ -45,8 +49,10 @@ typedef AVComplexDouble TXComplex;
 #elif defined(TX_INT32)
 #define TX_TAB(x) x ## _int32
 #define TX_NAME(x) x ## _int32_c
-#define TX_NAME_STR(x) x "_int32_c"
+#define TX_NAME_STR(x) NULL_IF_CONFIG_SMALL(x "_int32_c")
 #define TX_TYPE(x) AV_TX_INT32_ ## x
+#define TX_FN_NAME(fn, suffix) ff_tx_ ## fn ## _int32_ ## suffix
+#define TX_FN_NAME_STR(fn, suffix) NULL_IF_CONFIG_SMALL(#fn "_int32_" #suffix)
 #define MULT(x, m) (((((int64_t)(x)) * (int64_t)(m)) + 0x40000000) >> 31)
 #define SCALE_TYPE float
 typedef int32_t TXSample;
@@ -54,6 +60,24 @@ typedef AVComplexInt32 TXComplex;
 #else
 typedef void TXComplex;
 #endif
+
+#define TX_DECL_FN(fn, suffix) \
+    void TX_FN_NAME(fn, suffix)(AVTXContext *s, void *o, void *i, ptrdiff_t st);
+
+#define TX_DEF(fn, tx_type, len_min, len_max, f1, f2,                          \
+               p, init_fn, suffix, cf, cd_flags, cf2)                          \
+    &(const FFTXCodelet){                                                      \
+        .name       = TX_FN_NAME_STR(fn, suffix),                              \
+        .function   = TX_FN_NAME(fn, suffix),                                  \
+        .type       = TX_TYPE(tx_type),                                        \
+        .flags      = FF_TX_ALIGNED | FF_TX_OUT_OF_PLACE | cd_flags,           \
+        .factors    = { f1, f2 },                                              \
+        .min_len    = len_min,                                                 \
+        .max_len    = len_max,                                                 \
+        .init       = init_fn,                                                 \
+        .cpu_flags  = cf2 | AV_CPU_FLAG_ ## cf,                                \
+        .prio       = p,                                                       \
+    }
 
 #if defined(TX_FLOAT) || defined(TX_DOUBLE)
 
@@ -121,6 +145,7 @@ typedef void TXComplex;
 #define FF_TX_PRESHUFFLE   (1ULL << 61) /* Codelet expects permuted coeffs            */
 #define FF_TX_INVERSE_ONLY (1ULL << 60) /* For non-orthogonal inverse-only transforms */
 #define FF_TX_FORWARD_ONLY (1ULL << 59) /* For non-orthogonal forward-only transforms */
+#define FF_TX_ASM_CALL     (1ULL << 58) /* For asm->asm functions only                */
 
 typedef enum FFTXCodeletPriority {
     FF_TX_PRIO_BASE = 0,               /* Baseline priority */
@@ -263,9 +288,12 @@ int ff_tx_gen_ptwo_inplace_revtab_idx(AVTXContext *s);
  * functions in AVX mode.
  *
  * If length is smaller than basis/2 this function will not do anything.
+ *
+ * If inv_lookup is set to 1, it will flip the lookup from out[map[i]] = src[i]
+ * to out[i] = src[map[i]].
  */
-int ff_tx_gen_split_radix_parity_revtab(AVTXContext *s, int invert_lookup,
-                                        int basis, int dual_stride);
+int ff_tx_gen_split_radix_parity_revtab(AVTXContext *s, int len, int inv,
+                                        int inv_lookup, int basis, int dual_stride);
 
 /* Typed init function to initialize shared tables. Will initialize all tables
  * for all factors of a length. */
@@ -273,14 +301,18 @@ void ff_tx_init_tabs_float (int len);
 void ff_tx_init_tabs_double(int len);
 void ff_tx_init_tabs_int32 (int len);
 
-/* Typed init function to initialize an MDCT exptab in a context. */
-int  ff_tx_mdct_gen_exp_float (AVTXContext *s);
-int  ff_tx_mdct_gen_exp_double(AVTXContext *s);
-int  ff_tx_mdct_gen_exp_int32 (AVTXContext *s);
+/* Typed init function to initialize an MDCT exptab in a context.
+ * If pre_tab is set, duplicates the entire table, with the first
+ * copy being shuffled according to pre_tab, and the second copy
+ * being the original. */
+int ff_tx_mdct_gen_exp_float (AVTXContext *s, int *pre_tab);
+int ff_tx_mdct_gen_exp_double(AVTXContext *s, int *pre_tab);
+int ff_tx_mdct_gen_exp_int32 (AVTXContext *s, int *pre_tab);
 
 /* Lists of codelets */
 extern const FFTXCodelet * const ff_tx_codelet_list_float_c       [];
 extern const FFTXCodelet * const ff_tx_codelet_list_float_x86     [];
+extern const FFTXCodelet * const ff_tx_codelet_list_float_aarch64 [];
 
 extern const FFTXCodelet * const ff_tx_codelet_list_double_c      [];
 

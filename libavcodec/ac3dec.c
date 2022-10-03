@@ -24,6 +24,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "config_components.h"
+
 #include <stdio.h>
 #include <stddef.h>
 #include <math.h>
@@ -32,14 +34,16 @@
 #include "libavutil/channel_layout.h"
 #include "libavutil/crc.h"
 #include "libavutil/downmix_info.h"
+#include "libavutil/intmath.h"
 #include "libavutil/opt.h"
 #include "libavutil/thread.h"
 #include "bswapdsp.h"
-#include "internal.h"
 #include "aac_ac3_parser.h"
 #include "ac3_parser_internal.h"
 #include "ac3dec.h"
 #include "ac3dec_data.h"
+#include "ac3defs.h"
+#include "decode.h"
 #include "kbdwin.h"
 
 /**
@@ -179,6 +183,33 @@ static av_cold void ac3_tables_init(void)
 #endif
 }
 
+static void ac3_downmix(AVCodecContext *avctx)
+{
+    AC3DecodeContext *s = avctx->priv_data;
+    const AVChannelLayout mono   = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
+    const AVChannelLayout stereo = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
+
+    /* allow downmixing to stereo or mono */
+#if FF_API_OLD_CHANNEL_LAYOUT
+FF_DISABLE_DEPRECATION_WARNINGS
+    if (avctx->request_channel_layout) {
+        av_channel_layout_uninit(&s->downmix_layout);
+        av_channel_layout_from_mask(&s->downmix_layout, avctx->request_channel_layout);
+    }
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
+    if (avctx->ch_layout.nb_channels > 1 &&
+        !av_channel_layout_compare(&s->downmix_layout, &mono)) {
+        av_channel_layout_uninit(&avctx->ch_layout);
+        avctx->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
+    } else if (avctx->ch_layout.nb_channels > 2 &&
+             !av_channel_layout_compare(&s->downmix_layout, &stereo)) {
+        av_channel_layout_uninit(&avctx->ch_layout);
+        avctx->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
+    }
+    s->downmixed = 1;
+}
+
 /**
  * AVCodec initialization
  */
@@ -199,13 +230,13 @@ static av_cold int ac3_decode_init(AVCodecContext *avctx)
 #if (USE_FIXED)
     s->fdsp = avpriv_alloc_fixed_dsp(avctx->flags & AV_CODEC_FLAG_BITEXACT);
 #else
-    ff_fmt_convert_init(&s->fmt_conv, avctx);
+    ff_fmt_convert_init(&s->fmt_conv);
     s->fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
 #endif
     if (!s->fdsp)
         return AVERROR(ENOMEM);
 
-    ff_ac3dsp_init(&s->ac3dsp, avctx->flags & AV_CODEC_FLAG_BITEXACT);
+    ff_ac3dsp_init(&s->ac3dsp);
     av_lfg_init(&s->dith_state, 0);
 
     if (USE_FIXED)
@@ -213,14 +244,7 @@ static av_cold int ac3_decode_init(AVCodecContext *avctx)
     else
         avctx->sample_fmt = AV_SAMPLE_FMT_FLTP;
 
-    /* allow downmixing to stereo or mono */
-    if (avctx->channels > 1 &&
-        avctx->request_channel_layout == AV_CH_LAYOUT_MONO)
-        avctx->channels = 1;
-    else if (avctx->channels > 2 &&
-             avctx->request_channel_layout == AV_CH_LAYOUT_STEREO)
-        avctx->channels = 2;
-    s->downmixed = 1;
+    ac3_downmix(avctx);
 
     for (i = 0; i < AC3_MAX_CHANNELS; i++) {
         s->xcfptr[i] = s->transform_coeffs[i];
@@ -1465,10 +1489,9 @@ static int decode_audio_block(AC3DecodeContext *s, int blk, int offset)
 /**
  * Decode a single AC-3 frame.
  */
-static int ac3_decode_frame(AVCodecContext * avctx, void *data,
+static int ac3_decode_frame(AVCodecContext *avctx, AVFrame *frame,
                             int *got_frame_ptr, AVPacket *avpkt)
 {
-    AVFrame *frame     = data;
     const uint8_t *buf = avpkt->data;
     int buf_size, full_buf_size = avpkt->size;
     AC3DecodeContext *s = avctx->priv_data;
@@ -1480,6 +1503,7 @@ static int ac3_decode_frame(AVCodecContext * avctx, void *data,
     const SHORTFLOAT *output[AC3_MAX_CHANNELS];
     enum AVMatrixEncoding matrix_encoding;
     AVDownmixInfo *downmix_info;
+    uint64_t mask;
 
     s->superframe_size = 0;
 
@@ -1590,11 +1614,11 @@ dependent_frame:
         if (s->lfe_on)
             s->output_mode |= AC3_OUTPUT_LFEON;
         if (s->channels > 1 &&
-            avctx->request_channel_layout == AV_CH_LAYOUT_MONO) {
+            !av_channel_layout_compare(&s->downmix_layout, &(AVChannelLayout)AV_CHANNEL_LAYOUT_MONO)) {
             s->out_channels = 1;
             s->output_mode  = AC3_CHMODE_MONO;
         } else if (s->channels > 2 &&
-                   avctx->request_channel_layout == AV_CH_LAYOUT_STEREO) {
+                   !av_channel_layout_compare(&s->downmix_layout, &(AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO)) {
             s->out_channels = 2;
             s->output_mode  = AC3_CHMODE_STEREO;
         }
@@ -1615,10 +1639,13 @@ dependent_frame:
         av_log(avctx, AV_LOG_ERROR, "unable to determine channel mode\n");
         return AVERROR_INVALIDDATA;
     }
-    avctx->channels = s->out_channels;
-    avctx->channel_layout = ff_ac3_channel_layout_tab[s->output_mode & ~AC3_OUTPUT_LFEON];
+
+    mask = ff_ac3_channel_layout_tab[s->output_mode & ~AC3_OUTPUT_LFEON];
     if (s->output_mode & AC3_OUTPUT_LFEON)
-        avctx->channel_layout |= AV_CH_LOW_FREQUENCY;
+        mask |= AV_CH_LOW_FREQUENCY;
+
+    av_channel_layout_uninit(&avctx->ch_layout);
+    av_channel_layout_from_mask(&avctx->ch_layout, mask);
 
     /* set audio service type based on bitstream mode for AC-3 */
     avctx->audio_service_type = s->bitstream_mode;
@@ -1714,24 +1741,24 @@ skip:
                 channel_layout |= ff_eac3_custom_channel_map_locations[ch][1];
             }
         }
-        if (av_get_channel_layout_nb_channels(channel_layout) > EAC3_MAX_CHANNELS) {
+        if (av_popcount64(channel_layout) > EAC3_MAX_CHANNELS) {
             av_log(avctx, AV_LOG_ERROR, "Too many channels (%d) coded\n",
-                   av_get_channel_layout_nb_channels(channel_layout));
+                   av_popcount64(channel_layout));
             return AVERROR_INVALIDDATA;
         }
 
-        avctx->channel_layout = channel_layout;
-        avctx->channels = av_get_channel_layout_nb_channels(channel_layout);
+        av_channel_layout_uninit(&avctx->ch_layout);
+        av_channel_layout_from_mask(&avctx->ch_layout, channel_layout);
 
         for (ch = 0; ch < EAC3_MAX_CHANNELS; ch++) {
             if (s->channel_map & (1 << (EAC3_MAX_CHANNELS - ch - 1))) {
                 if (ff_eac3_custom_channel_map_locations[ch][0]) {
-                    int index = av_get_channel_layout_channel_index(channel_layout,
-                                                                    ff_eac3_custom_channel_map_locations[ch][1]);
+                    int index = av_channel_layout_index_from_channel(&avctx->ch_layout,
+                                                                     ff_ctzll(ff_eac3_custom_channel_map_locations[ch][1]));
                     if (index < 0)
                         return AVERROR_INVALIDDATA;
                     if (extend >= channel_map_size)
-                        return AVERROR_INVALIDDATA;
+                        break;
 
                     extended_channel_map[index] = offset + channel_map[extend++];
                 } else {
@@ -1739,12 +1766,11 @@ skip:
 
                     for (i = 0; i < 64; i++) {
                         if ((1ULL << i) & ff_eac3_custom_channel_map_locations[ch][1]) {
-                            int index = av_get_channel_layout_channel_index(channel_layout,
-                                                                            1ULL << i);
+                            int index = av_channel_layout_index_from_channel(&avctx->ch_layout, i);
                             if (index < 0)
                                 return AVERROR_INVALIDDATA;
                             if (extend >= channel_map_size)
-                                return AVERROR_INVALIDDATA;
+                                break;
 
                             extended_channel_map[index] = offset + channel_map[extend++];
                         }
@@ -1752,6 +1778,8 @@ skip:
                 }
             }
         }
+
+        ac3_downmix(avctx);
     }
 
     /* get output buffer */
@@ -1759,7 +1787,7 @@ skip:
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
 
-    for (ch = 0; ch < avctx->channels; ch++) {
+    for (ch = 0; ch < avctx->ch_layout.nb_channels; ch++) {
         int map = extended_channel_map[ch];
         av_assert0(ch>=AV_NUM_DATA_POINTERS || frame->extended_data[ch] == frame->data[ch]);
         memcpy((SHORTFLOAT *)frame->extended_data[ch],

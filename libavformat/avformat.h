@@ -319,7 +319,13 @@
 #include "libavutil/log.h"
 
 #include "avio.h"
+#include "libavformat/version_major.h"
+#ifndef HAVE_AV_CONFIG_H
+/* When included as part of the ffmpeg build, only include the major version
+ * to avoid unnecessary rebuilds. When included externally, keep including
+ * the full version information. */
 #include "libavformat/version.h"
+#endif
 
 struct AVFormatContext;
 struct AVStream;
@@ -880,6 +886,13 @@ typedef struct AVIndexEntry {
 #define AV_DISPOSITION_TIMED_THUMBNAILS     (1 << 11)
 
 /**
+ * The stream is intended to be mixed with a spatial audio track. For example,
+ * it could be used for narration or stereo music, and may remain unchanged by
+ * listener head rotation.
+ */
+#define AV_DISPOSITION_NON_DIEGETIC         (1 << 12)
+
+/**
  * The subtitle stream contains captions, providing a transcription and possibly
  * a translation of audio. Typically intended for hearing-impaired audiences.
  */
@@ -1108,12 +1121,15 @@ typedef struct AVStream {
 
 struct AVCodecParserContext *av_stream_get_parser(const AVStream *s);
 
+#if FF_API_GET_END_PTS
 /**
  * Returns the pts of the last muxed packet + its duration
  *
  * the retuned value is undefined when used with a demuxer.
  */
+attribute_deprecated
 int64_t    av_stream_get_end_pts(const AVStream *st);
+#endif
 
 #define AV_PROGRAM_RUNNING 1
 

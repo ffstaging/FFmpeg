@@ -21,6 +21,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "config_components.h"
+
 #include "libavutil/avassert.h"
 #include "libavutil/internal.h"
 #include "libavutil/mem_internal.h"
@@ -34,9 +36,9 @@
 
 static void gmc1_motion(MpegEncContext *s,
                         uint8_t *dest_y, uint8_t *dest_cb, uint8_t *dest_cr,
-                        uint8_t **ref_picture)
+                        uint8_t *const *ref_picture)
 {
-    uint8_t *ptr;
+    const uint8_t *ptr;
     int src_x, src_y, motion_x, motion_y;
     ptrdiff_t offset, linesize, uvlinesize;
     int emu = 0;
@@ -131,9 +133,9 @@ static void gmc1_motion(MpegEncContext *s,
 
 static void gmc_motion(MpegEncContext *s,
                        uint8_t *dest_y, uint8_t *dest_cb, uint8_t *dest_cr,
-                       uint8_t **ref_picture)
+                       uint8_t *const *ref_picture)
 {
-    uint8_t *ptr;
+    const uint8_t *ptr;
     int linesize, uvlinesize;
     const int a = s->sprite_warping_accuracy;
     int ox, oy;
@@ -230,7 +232,7 @@ void mpeg_motion_internal(MpegEncContext *s,
                           int field_based,
                           int bottom_field,
                           int field_select,
-                          uint8_t **ref_picture,
+                          uint8_t *const *ref_picture,
                           op_pixels_func (*pix_op)[4],
                           int motion_x,
                           int motion_y,
@@ -239,7 +241,7 @@ void mpeg_motion_internal(MpegEncContext *s,
                           int is_16x8,
                           int mb_y)
 {
-    uint8_t *ptr_y, *ptr_cb, *ptr_cr;
+    const uint8_t *ptr_y, *ptr_cb, *ptr_cr;
     int dxy, uvdxy, mx, my, src_x, src_y,
         uvsrc_x, uvsrc_y, v_edge_pos, block_y_half;
     ptrdiff_t uvlinesize, linesize;
@@ -367,7 +369,7 @@ void mpeg_motion_internal(MpegEncContext *s,
 /* apply one mpeg motion vector to the three components */
 static void mpeg_motion(MpegEncContext *s,
                         uint8_t *dest_y, uint8_t *dest_cb, uint8_t *dest_cr,
-                        int field_select, uint8_t **ref_picture,
+                        int field_select, uint8_t *const *ref_picture,
                         op_pixels_func (*pix_op)[4],
                         int motion_x, int motion_y, int h, int is_16x8, int mb_y)
 {
@@ -386,7 +388,7 @@ static void mpeg_motion(MpegEncContext *s,
 static void mpeg_motion_field(MpegEncContext *s, uint8_t *dest_y,
                               uint8_t *dest_cb, uint8_t *dest_cr,
                               int bottom_field, int field_select,
-                              uint8_t **ref_picture,
+                              uint8_t *const *ref_picture,
                               op_pixels_func (*pix_op)[4],
                               int motion_x, int motion_y, int h, int mb_y)
 {
@@ -487,12 +489,12 @@ static inline void qpel_motion(MpegEncContext *s,
                                uint8_t *dest_cb,
                                uint8_t *dest_cr,
                                int field_based, int bottom_field,
-                               int field_select, uint8_t **ref_picture,
+                               int field_select, uint8_t *const *ref_picture,
                                op_pixels_func (*pix_op)[4],
                                qpel_mc_func (*qpix_op)[16],
                                int motion_x, int motion_y, int h)
 {
-    uint8_t *ptr_y, *ptr_cb, *ptr_cr;
+    const uint8_t *ptr_y, *ptr_cb, *ptr_cr;
     int dxy, uvdxy, mx, my, src_x, src_y, uvsrc_x, uvsrc_y, v_edge_pos;
     ptrdiff_t linesize, uvlinesize;
 
@@ -591,11 +593,11 @@ static inline void qpel_motion(MpegEncContext *s,
  */
 static void chroma_4mv_motion(MpegEncContext *s,
                               uint8_t *dest_cb, uint8_t *dest_cr,
-                              uint8_t **ref_picture,
+                              uint8_t *const *ref_picture,
                               op_pixels_func *pix_op,
                               int mx, int my)
 {
-    uint8_t *ptr;
+    const uint8_t *ptr;
     int src_x, src_y, dxy, emu = 0;
     ptrdiff_t offset;
 
@@ -641,7 +643,7 @@ static void chroma_4mv_motion(MpegEncContext *s,
     pix_op[dxy](dest_cr, ptr, s->uvlinesize, 8);
 }
 
-static inline void prefetch_motion(MpegEncContext *s, uint8_t **pix, int dir)
+static inline void prefetch_motion(MpegEncContext *s, uint8_t *const *pix, int dir)
 {
     /* fetch pixels for estimated mv 4 macroblocks ahead
      * optimized for 64byte cache lines */
@@ -659,11 +661,11 @@ static inline void apply_obmc(MpegEncContext *s,
                               uint8_t *dest_y,
                               uint8_t *dest_cb,
                               uint8_t *dest_cr,
-                              uint8_t **ref_picture,
+                              uint8_t *const *ref_picture,
                               op_pixels_func (*pix_op)[4])
 {
     LOCAL_ALIGNED_8(int16_t, mv_cache, [4], [4][2]);
-    Picture *cur_frame   = &s->current_picture;
+    const Picture *cur_frame = &s->current_picture;
     int mb_x = s->mb_x;
     int mb_y = s->mb_y;
     const int xy         = mb_x + mb_y * s->mb_stride;
@@ -747,7 +749,7 @@ static inline void apply_8x8(MpegEncContext *s,
                              uint8_t *dest_cb,
                              uint8_t *dest_cr,
                              int dir,
-                             uint8_t **ref_picture,
+                             uint8_t *const *ref_picture,
                              qpel_mc_func (*qpix_op)[16],
                              op_pixels_func (*pix_op)[4])
 {
@@ -755,7 +757,8 @@ static inline void apply_8x8(MpegEncContext *s,
     int i;
     int mb_x = s->mb_x;
     int mb_y = s->mb_y;
-    uint8_t *ptr, *dest;
+    uint8_t *dest;
+    const uint8_t *ptr;
 
     mx = 0;
     my = 0;
@@ -831,7 +834,7 @@ static av_always_inline void mpv_motion_internal(MpegEncContext *s,
                                                  uint8_t *dest_cb,
                                                  uint8_t *dest_cr,
                                                  int dir,
-                                                 uint8_t **ref_picture,
+                                                 uint8_t *const *ref_picture,
                                                  op_pixels_func (*pix_op)[4],
                                                  qpel_mc_func (*qpix_op)[16],
                                                  int is_mpeg12)
@@ -910,7 +913,7 @@ static av_always_inline void mpv_motion_internal(MpegEncContext *s,
     case MV_TYPE_16X8:
         if (CONFIG_SMALL || is_mpeg12) {
             for (i = 0; i < 2; i++) {
-                uint8_t **ref2picture;
+                uint8_t *const *ref2picture;
 
                 if ((s->picture_structure == s->field_select[dir][i] + 1 ||
                      s->pict_type == AV_PICTURE_TYPE_B || s->first_field) &&
@@ -972,7 +975,7 @@ static av_always_inline void mpv_motion_internal(MpegEncContext *s,
 void ff_mpv_motion(MpegEncContext *s,
                    uint8_t *dest_y, uint8_t *dest_cb,
                    uint8_t *dest_cr, int dir,
-                   uint8_t **ref_picture,
+                   uint8_t *const *ref_picture,
                    op_pixels_func (*pix_op)[4],
                    qpel_mc_func (*qpix_op)[16])
 {

@@ -21,15 +21,15 @@
 
 #include "avformat.h"
 #include "internal.h"
+#include "mux.h"
+#include "version.h"
 #include "libavcodec/bsf.h"
 #include "libavcodec/internal.h"
 #include "libavcodec/packet_internal.h"
 #include "libavutil/opt.h"
 #include "libavutil/dict.h"
-#include "libavutil/pixdesc.h"
 #include "libavutil/timestamp.h"
 #include "libavutil/avassert.h"
-#include "libavutil/avstring.h"
 #include "libavutil/internal.h"
 #include "libavutil/mathematics.h"
 
@@ -86,51 +86,6 @@ static void frac_add(FFFrac *f, int64_t incr)
         num     = num % den;
     }
     f->num = num;
-}
-
-AVRational ff_choose_timebase(AVFormatContext *s, AVStream *st, int min_precision)
-{
-    AVRational q;
-
-    q = st->time_base;
-
-    for (int j = 2; j < 14; j += 1 + (j > 2))
-        while (q.den / q.num < min_precision && q.num % j == 0)
-            q.num /= j;
-    while (q.den / q.num < min_precision && q.den < (1<<24))
-        q.den <<= 1;
-
-    return q;
-}
-
-enum AVChromaLocation ff_choose_chroma_location(AVFormatContext *s, AVStream *st)
-{
-    AVCodecParameters *par = st->codecpar;
-    const AVPixFmtDescriptor *pix_desc = av_pix_fmt_desc_get(par->format);
-
-    if (par->chroma_location != AVCHROMA_LOC_UNSPECIFIED)
-        return par->chroma_location;
-
-    if (pix_desc) {
-        if (pix_desc->log2_chroma_h == 0) {
-            return AVCHROMA_LOC_TOPLEFT;
-        } else if (pix_desc->log2_chroma_w == 1 && pix_desc->log2_chroma_h == 1) {
-            if (par->field_order == AV_FIELD_UNKNOWN || par->field_order == AV_FIELD_PROGRESSIVE) {
-                switch (par->codec_id) {
-                case AV_CODEC_ID_MJPEG:
-                case AV_CODEC_ID_MPEG1VIDEO: return AVCHROMA_LOC_CENTER;
-                }
-            }
-            if (par->field_order == AV_FIELD_UNKNOWN || par->field_order != AV_FIELD_PROGRESSIVE) {
-                switch (par->codec_id) {
-                case AV_CODEC_ID_MPEG2VIDEO: return AVCHROMA_LOC_LEFT;
-                }
-            }
-        }
-    }
-
-    return AVCHROMA_LOC_UNSPECIFIED;
-
 }
 
 int avformat_alloc_output_context2(AVFormatContext **avctx, const AVOutputFormat *oformat,
@@ -272,8 +227,25 @@ static int init_muxer(AVFormatContext *s, AVDictionary **options)
                 ret = AVERROR(EINVAL);
                 goto fail;
             }
+
+#if FF_API_OLD_CHANNEL_LAYOUT
+FF_DISABLE_DEPRECATION_WARNINGS
+            /* if the caller is using the deprecated channel layout API,
+             * convert it to the new style */
+            if (!par->ch_layout.nb_channels &&
+                par->channels) {
+                if (par->channel_layout) {
+                    av_channel_layout_from_mask(&par->ch_layout, par->channel_layout);
+                } else {
+                    par->ch_layout.order       = AV_CHANNEL_ORDER_UNSPEC;
+                    par->ch_layout.nb_channels = par->channels;
+                }
+            }
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
+
             if (!par->block_align)
-                par->block_align = par->channels *
+                par->block_align = par->ch_layout.nb_channels *
                                    av_get_bits_per_sample(par->codec_id) >> 3;
             break;
         case AVMEDIA_TYPE_VIDEO:
@@ -660,6 +632,8 @@ static void handle_avoid_negative_ts(FFFormatContext *si, FFStream *sti,
         if (ts == AV_NOPTS_VALUE)
             return;
 
+        ts -= sti->lowest_ts_allowed;
+
         /* Peek into the muxing queue to improve our estimate
          * of the lowest timestamp if av_interleaved_write_frame() is used. */
         for (const PacketListEntry *pktl = si->packet_buffer.head;
@@ -668,6 +642,7 @@ static void handle_avoid_negative_ts(FFFormatContext *si, FFStream *sti,
             int64_t cmp_ts = use_pts ? pktl->pkt.pts : pktl->pkt.dts;
             if (cmp_ts == AV_NOPTS_VALUE)
                 continue;
+            cmp_ts -= ffstream(s->streams[pktl->pkt.stream_index])->lowest_ts_allowed;
             if (s->output_ts_offset)
                 cmp_ts += av_rescale_q(s->output_ts_offset, AV_TIME_BASE_Q, cmp_tb);
             if (av_compare_ts(cmp_ts, cmp_tb, ts, tb) < 0) {
@@ -697,7 +672,7 @@ static void handle_avoid_negative_ts(FFFormatContext *si, FFStream *sti,
         pkt->pts += offset;
 
     if (si->avoid_negative_ts_use_pts) {
-        if (pkt->pts != AV_NOPTS_VALUE && pkt->pts < 0) {
+        if (pkt->pts != AV_NOPTS_VALUE && pkt->pts < sti->lowest_ts_allowed) {
             av_log(s, AV_LOG_WARNING, "failed to avoid negative "
                    "pts %s in stream %d.\n"
                    "Try -avoid_negative_ts 1 as a possible workaround.\n",
@@ -706,7 +681,7 @@ static void handle_avoid_negative_ts(FFFormatContext *si, FFStream *sti,
             );
         }
     } else {
-        if (pkt->dts != AV_NOPTS_VALUE && pkt->dts < 0) {
+        if (pkt->dts != AV_NOPTS_VALUE && pkt->dts < sti->lowest_ts_allowed) {
             av_log(s, AV_LOG_WARNING,
                    "Packets poorly interleaved, failed to avoid negative "
                    "timestamp %s in stream %d.\n"
@@ -1332,6 +1307,49 @@ int av_get_output_timestamp(struct AVFormatContext *s, int stream,
     return 0;
 }
 
+int ff_stream_add_bitstream_filter(AVStream *st, const char *name, const char *args)
+{
+    int ret;
+    const AVBitStreamFilter *bsf;
+    FFStream *const sti = ffstream(st);
+    AVBSFContext *bsfc;
+
+    av_assert0(!sti->bsfc);
+
+    if (!(bsf = av_bsf_get_by_name(name))) {
+        av_log(NULL, AV_LOG_ERROR, "Unknown bitstream filter '%s'\n", name);
+        return AVERROR_BSF_NOT_FOUND;
+    }
+
+    if ((ret = av_bsf_alloc(bsf, &bsfc)) < 0)
+        return ret;
+
+    bsfc->time_base_in = st->time_base;
+    if ((ret = avcodec_parameters_copy(bsfc->par_in, st->codecpar)) < 0) {
+        av_bsf_free(&bsfc);
+        return ret;
+    }
+
+    if (args && bsfc->filter->priv_class) {
+        if ((ret = av_set_options_string(bsfc->priv_data, args, "=", ":")) < 0) {
+            av_bsf_free(&bsfc);
+            return ret;
+        }
+    }
+
+    if ((ret = av_bsf_init(bsfc)) < 0) {
+        av_bsf_free(&bsfc);
+        return ret;
+    }
+
+    sti->bsfc = bsfc;
+
+    av_log(NULL, AV_LOG_VERBOSE,
+           "Automatically inserted bitstream filter '%s'; args='%s'\n",
+           name, args ? args : "");
+    return 1;
+}
+
 int ff_write_chained(AVFormatContext *dst, int dst_stream, AVPacket *pkt,
                      AVFormatContext *src, int interleave)
 {
@@ -1402,7 +1420,14 @@ static int write_uncoded_frame_internal(AVFormatContext *s, int stream_index,
         pkt->size         = sizeof(frame);
         pkt->pts          =
         pkt->dts          = frame->pts;
-        pkt->duration     = frame->pkt_duration;
+#if FF_API_PKT_DURATION
+FF_DISABLE_DEPRECATION_WARNINGS
+        if (frame->pkt_duration)
+            pkt->duration     = frame->pkt_duration;
+        else
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
+        pkt->duration = frame->duration;
         pkt->stream_index = stream_index;
         pkt->flags |= AV_PKT_FLAG_UNCODED_FRAME;
     }

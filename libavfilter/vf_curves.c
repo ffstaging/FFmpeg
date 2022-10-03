@@ -22,12 +22,12 @@
 #include "libavutil/bprint.h"
 #include "libavutil/eval.h"
 #include "libavutil/file.h"
+#include "libavutil/file_open.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/avassert.h"
 #include "libavutil/pixdesc.h"
 #include "avfilter.h"
 #include "drawutils.h"
-#include "formats.h"
 #include "internal.h"
 #include "video.h"
 
@@ -416,7 +416,7 @@ static int dump_curves(const char *fname, uint16_t *graph[NB_COMP + 1],
     AVBPrint buf;
     const double scale = 1. / (lut_size - 1);
     static const char * const colors[] = { "red", "green", "blue", "#404040", };
-    FILE *f = av_fopen_utf8(fname, "w");
+    FILE *f = avpriv_fopen_utf8(fname, "w");
 
     av_assert0(FF_ARRAY_ELEMS(colors) == NB_COMP + 1);
 

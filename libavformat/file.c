@@ -19,10 +19,13 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "config_components.h"
+
 #include "libavutil/avstring.h"
+#include "libavutil/file_open.h"
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
-#include "avformat.h"
+#include "avio.h"
 #if HAVE_DIRENT_H
 #include <dirent.h>
 #endif
@@ -152,11 +155,7 @@ static int file_check(URLContext *h, int mask)
             ret |= AVIO_FLAG_WRITE;
 #else
     struct stat st;
-#   ifndef _WIN32
     ret = stat(filename, &st);
-#   else
-    ret = win32_stat(filename, &st);
-#   endif
     if (ret < 0)
         return AVERROR(errno);
 

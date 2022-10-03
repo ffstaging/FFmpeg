@@ -34,11 +34,12 @@
 #include "blockdsp.h"
 #include "bytestream.h"
 #include "bswapdsp.h"
+#include "codec_internal.h"
+#include "decode.h"
 #include "get_bits.h"
 #include "aandcttab.h"
 #include "eaidct.h"
 #include "idctdsp.h"
-#include "internal.h"
 #include "mpeg12data.h"
 #include "mpeg12vlc.h"
 
@@ -68,7 +69,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     MadContext *s = avctx->priv_data;
     s->avctx = avctx;
     avctx->pix_fmt = AV_PIX_FMT_YUV420P;
-    ff_blockdsp_init(&s->bdsp, avctx);
+    ff_blockdsp_init(&s->bdsp);
     ff_bswapdsp_init(&s->bbdsp);
     ff_idctdsp_init(&s->idsp, avctx);
     ff_init_scantable_permutation(s->idsp.idct_permutation, FF_IDCT_PERM_NONE);
@@ -246,14 +247,12 @@ static void calc_quant_matrix(MadContext *s, int qscale)
         s->quant_matrix[i] = (ff_inv_aanscales[i]*ff_mpeg1_default_intra_matrix[i]*qscale + 32) >> 10;
 }
 
-static int decode_frame(AVCodecContext *avctx,
-                        void *data, int *got_frame,
-                        AVPacket *avpkt)
+static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
+                        int *got_frame, AVPacket *avpkt)
 {
     const uint8_t *buf = avpkt->data;
     int buf_size       = avpkt->size;
     MadContext *s     = avctx->priv_data;
-    AVFrame *frame    = data;
     GetByteContext gb;
     int width, height;
     int chunk_type;
@@ -341,15 +340,14 @@ static av_cold int decode_end(AVCodecContext *avctx)
     return 0;
 }
 
-const AVCodec ff_eamad_decoder = {
-    .name           = "eamad",
-    .long_name      = NULL_IF_CONFIG_SMALL("Electronic Arts Madcow Video"),
-    .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = AV_CODEC_ID_MAD,
+const FFCodec ff_eamad_decoder = {
+    .p.name         = "eamad",
+    CODEC_LONG_NAME("Electronic Arts Madcow Video"),
+    .p.type         = AVMEDIA_TYPE_VIDEO,
+    .p.id           = AV_CODEC_ID_MAD,
     .priv_data_size = sizeof(MadContext),
     .init           = decode_init,
     .close          = decode_end,
-    .decode         = decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    FF_CODEC_DECODE_CB(decode_frame),
+    .p.capabilities = AV_CODEC_CAP_DR1,
 };

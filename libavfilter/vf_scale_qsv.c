@@ -21,7 +21,7 @@
  * scale video filter - QSV
  */
 
-#include <mfx/mfxvideo.h>
+#include <mfxvideo.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -69,7 +69,6 @@ enum var_name {
     VARS_NB
 };
 
-#define QSV_HAVE_SCALING_CONFIG  QSV_VERSION_ATLEAST(1, 19)
 #define MFX_IMPL_VIA_MASK(impl) (0x0f00 & (impl))
 
 typedef struct QSVScaleContext {
@@ -90,14 +89,14 @@ typedef struct QSVScaleContext {
     mfxFrameSurface1 **surface_ptrs_out;
     int             nb_surface_ptrs_out;
 
+#if QSV_HAVE_OPAQUE
     mfxExtOpaqueSurfaceAlloc opaque_alloc;
-
-#if QSV_HAVE_SCALING_CONFIG
-    mfxExtVPPScaling         scale_conf;
 #endif
+
+    mfxExtVPPScaling         scale_conf;
     int                      mode;
 
-    mfxExtBuffer             *ext_buffers[1 + QSV_HAVE_SCALING_CONFIG];
+    mfxExtBuffer             *ext_buffers[2];
     int                      num_ext_buf;
 
     int shift_width, shift_height;
@@ -271,7 +270,7 @@ static int init_out_session(AVFilterContext *ctx)
     AVQSVFramesContext *out_frames_hwctx = out_frames_ctx->hwctx;
     AVQSVDeviceContext     *device_hwctx = in_frames_ctx->device_ctx->hwctx;
 
-    int opaque = !!(in_frames_hwctx->frame_type & MFX_MEMTYPE_OPAQUE_FRAME);
+    int opaque = 0;
 
     mfxHDL handle = NULL;
     mfxHandleType handle_type;
@@ -279,8 +278,11 @@ static int init_out_session(AVFilterContext *ctx)
     mfxIMPL impl;
     mfxVideoParam par;
     mfxStatus err;
-    int i;
+    int i, ret;
 
+#if QSV_HAVE_OPAQUE
+    opaque = !!(in_frames_hwctx->frame_type & MFX_MEMTYPE_OPAQUE_FRAME);
+#endif
     s->num_ext_buf = 0;
 
     /* extract the properties of the "master" session given to us */
@@ -313,11 +315,10 @@ static int init_out_session(AVFilterContext *ctx)
 
     /* create a "slave" session with those same properties, to be used for
      * actual scaling */
-    err = MFXInit(impl, &ver, &s->session);
-    if (err != MFX_ERR_NONE) {
-        av_log(ctx, AV_LOG_ERROR, "Error initializing a session for scaling\n");
-        return AVERROR_UNKNOWN;
-    }
+    ret = ff_qsvvpp_create_mfx_session(ctx, device_hwctx->loader, impl, &ver,
+                                       &s->session);
+    if (ret)
+        return ret;
 
     if (handle) {
         err = MFXVideoCORE_SetHandle(s->session, handle_type, handle);
@@ -333,38 +334,7 @@ static int init_out_session(AVFilterContext *ctx)
 
     memset(&par, 0, sizeof(par));
 
-    if (opaque) {
-        s->surface_ptrs_in = av_calloc(in_frames_hwctx->nb_surfaces,
-                                       sizeof(*s->surface_ptrs_in));
-        if (!s->surface_ptrs_in)
-            return AVERROR(ENOMEM);
-        for (i = 0; i < in_frames_hwctx->nb_surfaces; i++)
-            s->surface_ptrs_in[i] = in_frames_hwctx->surfaces + i;
-        s->nb_surface_ptrs_in = in_frames_hwctx->nb_surfaces;
-
-        s->surface_ptrs_out = av_calloc(out_frames_hwctx->nb_surfaces,
-                                        sizeof(*s->surface_ptrs_out));
-        if (!s->surface_ptrs_out)
-            return AVERROR(ENOMEM);
-        for (i = 0; i < out_frames_hwctx->nb_surfaces; i++)
-            s->surface_ptrs_out[i] = out_frames_hwctx->surfaces + i;
-        s->nb_surface_ptrs_out = out_frames_hwctx->nb_surfaces;
-
-        s->opaque_alloc.In.Surfaces   = s->surface_ptrs_in;
-        s->opaque_alloc.In.NumSurface = s->nb_surface_ptrs_in;
-        s->opaque_alloc.In.Type       = in_frames_hwctx->frame_type;
-
-        s->opaque_alloc.Out.Surfaces   = s->surface_ptrs_out;
-        s->opaque_alloc.Out.NumSurface = s->nb_surface_ptrs_out;
-        s->opaque_alloc.Out.Type       = out_frames_hwctx->frame_type;
-
-        s->opaque_alloc.Header.BufferId = MFX_EXTBUFF_OPAQUE_SURFACE_ALLOCATION;
-        s->opaque_alloc.Header.BufferSz = sizeof(s->opaque_alloc);
-
-        s->ext_buffers[s->num_ext_buf++] = (mfxExtBuffer*)&s->opaque_alloc;
-
-        par.IOPattern = MFX_IOPATTERN_IN_OPAQUE_MEMORY | MFX_IOPATTERN_OUT_OPAQUE_MEMORY;
-    } else {
+    if (!opaque) {
         mfxFrameAllocator frame_allocator = {
             .pthis  = ctx,
             .Alloc  = frame_alloc,
@@ -396,15 +366,47 @@ static int init_out_session(AVFilterContext *ctx)
 
         par.IOPattern = MFX_IOPATTERN_IN_VIDEO_MEMORY | MFX_IOPATTERN_OUT_VIDEO_MEMORY;
     }
+#if QSV_HAVE_OPAQUE
+    else {
+        s->surface_ptrs_in = av_calloc(in_frames_hwctx->nb_surfaces,
+                                       sizeof(*s->surface_ptrs_in));
+        if (!s->surface_ptrs_in)
+            return AVERROR(ENOMEM);
+        for (i = 0; i < in_frames_hwctx->nb_surfaces; i++)
+            s->surface_ptrs_in[i] = in_frames_hwctx->surfaces + i;
+        s->nb_surface_ptrs_in = in_frames_hwctx->nb_surfaces;
 
-#if QSV_HAVE_SCALING_CONFIG
+        s->surface_ptrs_out = av_calloc(out_frames_hwctx->nb_surfaces,
+                                        sizeof(*s->surface_ptrs_out));
+        if (!s->surface_ptrs_out)
+            return AVERROR(ENOMEM);
+        for (i = 0; i < out_frames_hwctx->nb_surfaces; i++)
+            s->surface_ptrs_out[i] = out_frames_hwctx->surfaces + i;
+        s->nb_surface_ptrs_out = out_frames_hwctx->nb_surfaces;
+
+        s->opaque_alloc.In.Surfaces   = s->surface_ptrs_in;
+        s->opaque_alloc.In.NumSurface = s->nb_surface_ptrs_in;
+        s->opaque_alloc.In.Type       = in_frames_hwctx->frame_type;
+
+        s->opaque_alloc.Out.Surfaces   = s->surface_ptrs_out;
+        s->opaque_alloc.Out.NumSurface = s->nb_surface_ptrs_out;
+        s->opaque_alloc.Out.Type       = out_frames_hwctx->frame_type;
+
+        s->opaque_alloc.Header.BufferId = MFX_EXTBUFF_OPAQUE_SURFACE_ALLOCATION;
+        s->opaque_alloc.Header.BufferSz = sizeof(s->opaque_alloc);
+
+        s->ext_buffers[s->num_ext_buf++] = (mfxExtBuffer*)&s->opaque_alloc;
+
+        par.IOPattern = MFX_IOPATTERN_IN_OPAQUE_MEMORY | MFX_IOPATTERN_OUT_OPAQUE_MEMORY;
+    }
+#endif
+
     memset(&s->scale_conf, 0, sizeof(mfxExtVPPScaling));
     s->scale_conf.Header.BufferId     = MFX_EXTBUFF_VPP_SCALING;
     s->scale_conf.Header.BufferSz     = sizeof(mfxExtVPPScaling);
     s->scale_conf.ScalingMode         = s->mode;
     s->ext_buffers[s->num_ext_buf++]  = (mfxExtBuffer*)&s->scale_conf;
     av_log(ctx, AV_LOG_VERBOSE, "Scaling mode: %d\n", s->mode);
-#endif
 
     par.ExtParam    = s->ext_buffers;
     par.NumExtParam = s->num_ext_buf;
@@ -620,15 +622,9 @@ static const AVOption options[] = {
     { "h",      "Output video height", OFFSET(h_expr),     AV_OPT_TYPE_STRING, { .str = "ih"   }, .flags = FLAGS },
     { "format", "Output pixel format", OFFSET(format_str), AV_OPT_TYPE_STRING, { .str = "same" }, .flags = FLAGS },
 
-#if QSV_HAVE_SCALING_CONFIG
     { "mode",      "set scaling mode",    OFFSET(mode),    AV_OPT_TYPE_INT,    { .i64 = MFX_SCALING_MODE_DEFAULT}, MFX_SCALING_MODE_DEFAULT, MFX_SCALING_MODE_QUALITY, FLAGS, "mode"},
     { "low_power", "low power mode",        0,             AV_OPT_TYPE_CONST,  { .i64 = MFX_SCALING_MODE_LOWPOWER}, INT_MIN, INT_MAX, FLAGS, "mode"},
     { "hq",        "high quality mode",     0,             AV_OPT_TYPE_CONST,  { .i64 = MFX_SCALING_MODE_QUALITY},  INT_MIN, INT_MAX, FLAGS, "mode"},
-#else
-    { "mode",      "(not supported)",     OFFSET(mode),    AV_OPT_TYPE_INT,    { .i64 = 0}, 0, INT_MAX, FLAGS, "mode"},
-    { "low_power", "",                      0,             AV_OPT_TYPE_CONST,  { .i64 = 1}, 0,   0,     FLAGS, "mode"},
-    { "hq",        "",                      0,             AV_OPT_TYPE_CONST,  { .i64 = 2}, 0,   0,     FLAGS, "mode"},
-#endif
 
     { NULL },
 };

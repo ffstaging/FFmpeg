@@ -375,6 +375,15 @@ void ff_filter_graph_remove_filter(AVFilterGraph *graph, AVFilterContext *filter
 int ff_filter_graph_run_once(AVFilterGraph *graph);
 
 /**
+ * Query the formats of a filter.
+ *
+ * @param filter the filter context
+ *
+ * @return 0 on success
+ */
+int ff_filter_query_formats(AVFilterContext *filter);
+
+/**
  * Get number of threads for current filter instance.
  * This number is always same or less than graph->nb_threads.
  */

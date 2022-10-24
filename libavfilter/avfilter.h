@@ -41,6 +41,7 @@
 #include "libavutil/avutil.h"
 #include "libavutil/buffer.h"
 #include "libavutil/dict.h"
+#include "libavutil/bprint.h"
 #include "libavutil/frame.h"
 #include "libavutil/log.h"
 #include "libavutil/samplefmt.h"
@@ -744,6 +745,17 @@ int avfilter_link(AVFilterContext *src, unsigned srcpad,
  * Free the link in *link, and set its pointer to NULL.
  */
 void avfilter_link_free(AVFilterLink **link);
+
+/**
+ * Gets the formats from an AVFilterFormatsConfig.
+ *
+ * @param bp         an instance of AVBPrint
+ * @param filter     the AVFilter
+ * @param for_output set to 1 for filter outputs
+ * @param pad_index  the index of the input or output
+ * @return           zero on success
+ */
+int avfilter_print_config_formats(AVBPrint *bp, const AVFilter *filter, int for_output, unsigned pad_index);
 
 /**
  * Negotiate the media format, dimensions, etc of all inputs to a filter.

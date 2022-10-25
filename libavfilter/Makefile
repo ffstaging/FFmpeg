@@ -21,6 +21,7 @@ OBJS = allfilters.o                                                     \
        framequeue.o                                                     \
        graphdump.o                                                      \
        graphparser.o                                                    \
+       subtitles.o                                                      \
        version.o                                                        \
        video.o                                                          \
 
@@ -313,6 +314,8 @@ OBJS-$(CONFIG_GBLUR_FILTER)                  += vf_gblur.o
 OBJS-$(CONFIG_GBLUR_VULKAN_FILTER)           += vf_gblur_vulkan.o vulkan.o vulkan_filter.o
 OBJS-$(CONFIG_GEQ_FILTER)                    += vf_geq.o
 OBJS-$(CONFIG_GRADFUN_FILTER)                += vf_gradfun.o
+OBJS-$(CONFIG_GRAPHICSUB2TEXT_FILTER)        += sf_graphicsub2text.o
+OBJS-$(CONFIG_GRAPHICSUB2VIDEO_FILTER)       += vf_overlaygraphicsubs.o framesync.o
 OBJS-$(CONFIG_GRAPHMONITOR_FILTER)           += f_graphmonitor.o
 OBJS-$(CONFIG_GRAYWORLD_FILTER)              += vf_grayworld.o
 OBJS-$(CONFIG_GREYEDGE_FILTER)               += vf_colorconstancy.o
@@ -397,6 +400,8 @@ OBJS-$(CONFIG_OVERLAY_OPENCL_FILTER)         += vf_overlay_opencl.o opencl.o \
 OBJS-$(CONFIG_OVERLAY_QSV_FILTER)            += vf_overlay_qsv.o framesync.o
 OBJS-$(CONFIG_OVERLAY_VAAPI_FILTER)          += vf_overlay_vaapi.o framesync.o vaapi_vpp.o
 OBJS-$(CONFIG_OVERLAY_VULKAN_FILTER)         += vf_overlay_vulkan.o vulkan.o vulkan_filter.o
+OBJS-$(CONFIG_OVERLAYGRAPHICSUBS_FILTER)     += vf_overlaygraphicsubs.o framesync.o
+OBJS-$(CONFIG_OVERLAYTEXTSUBS_FILTER)        += vf_overlaytextsubs.o
 OBJS-$(CONFIG_OWDENOISE_FILTER)              += vf_owdenoise.o
 OBJS-$(CONFIG_PAD_FILTER)                    += vf_pad.o
 OBJS-$(CONFIG_PAD_OPENCL_FILTER)             += vf_pad_opencl.o opencl.o opencl/pad.o
@@ -490,6 +495,7 @@ OBJS-$(CONFIG_SWAPRECT_FILTER)               += vf_swaprect.o
 OBJS-$(CONFIG_SWAPUV_FILTER)                 += vf_swapuv.o
 OBJS-$(CONFIG_TBLEND_FILTER)                 += vf_blend.o framesync.o
 OBJS-$(CONFIG_TELECINE_FILTER)               += vf_telecine.o
+OBJS-$(CONFIG_TEXTSUB2VIDEO_FILTER)          += vf_overlaytextsubs.o
 OBJS-$(CONFIG_THISTOGRAM_FILTER)             += vf_histogram.o
 OBJS-$(CONFIG_THRESHOLD_FILTER)              += vf_threshold.o framesync.o
 OBJS-$(CONFIG_THUMBNAIL_FILTER)              += vf_thumbnail.o
@@ -581,6 +587,18 @@ OBJS-$(CONFIG_TESTSRC2_FILTER)               += vsrc_testsrc.o
 OBJS-$(CONFIG_YUVTESTSRC_FILTER)             += vsrc_testsrc.o
 
 OBJS-$(CONFIG_NULLSINK_FILTER)               += vsink_nullsink.o
+
+# subtitle filters
+OBJS-$(CONFIG_CENSOR_FILTER)                 += sf_textmod.o
+OBJS-$(CONFIG_SHOW_SPEAKER_FILTER)           += sf_textmod.o
+OBJS-$(CONFIG_SNULL_FILTER)                  += sf_snull.o
+OBJS-$(CONFIG_SPLITCC_FILTER)                += sf_splitcc.o
+OBJS-$(CONFIG_STRIM_FILTER)                  += trim.o
+OBJS-$(CONFIG_STRIPSTYLES_FILTER)            += sf_stripstyles.o
+OBJS-$(CONFIG_SUBFEED_FILTER)                += sf_subfeed.o
+OBJS-$(CONFIG_SUBSCALE_FILTER)               += sf_subscale.o
+OBJS-$(CONFIG_TEXT2GRAPHICSUB_FILTER)        += sf_text2graphicsub.o
+OBJS-$(CONFIG_TEXTMOD_FILTER)                += sf_textmod.o
 
 # multimedia filters
 OBJS-$(CONFIG_A3DSCOPE_FILTER)               += avf_a3dscope.o

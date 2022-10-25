@@ -19,6 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/subfmt.h"
 #include "libavutil/avassert.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
@@ -491,6 +492,13 @@ AVFilterFormats *ff_all_formats(enum AVMediaType type)
                 return NULL;
             fmt++;
         }
+    } else if (type == AVMEDIA_TYPE_SUBTITLE) {
+        if (ff_add_format(&ret, AV_SUBTITLE_FMT_BITMAP) < 0)
+            return NULL;
+        if (ff_add_format(&ret, AV_SUBTITLE_FMT_ASS) < 0)
+            return NULL;
+        if (ff_add_format(&ret, AV_SUBTITLE_FMT_TEXT) < 0)
+            return NULL;
     }
 
     return ret;
@@ -774,6 +782,10 @@ int ff_default_query_formats(AVFilterContext *ctx)
         type    = AVMEDIA_TYPE_AUDIO;
         formats = ff_make_format_list(f->formats.samples_list);
         break;
+    case FF_FILTER_FORMATS_SUBFMTS_LIST:
+        type    = AVMEDIA_TYPE_SUBTITLE;
+        formats = ff_make_format_list(f->formats.subs_list);
+        break;
     case FF_FILTER_FORMATS_SINGLE_PIXFMT:
         type    = AVMEDIA_TYPE_VIDEO;
         formats = ff_make_formats_list_singleton(f->formats.pix_fmt);
@@ -781,6 +793,10 @@ int ff_default_query_formats(AVFilterContext *ctx)
     case FF_FILTER_FORMATS_SINGLE_SAMPLEFMT:
         type    = AVMEDIA_TYPE_AUDIO;
         formats = ff_make_formats_list_singleton(f->formats.sample_fmt);
+        break;
+    case FF_FILTER_FORMATS_SINGLE_SUBFMT:
+        type    = AVMEDIA_TYPE_SUBTITLE;
+        formats = ff_make_formats_list_singleton(f->formats.sub_fmt);
         break;
     default:
         av_assert2(!"Unreachable");

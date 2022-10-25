@@ -107,7 +107,7 @@ static int decode_frame(AVCodecContext *avctx, AVSubtitle *sub,
     sub->num_rects = 1;
     rect->x = x; rect->y = y;
     rect->w = w; rect->h = h;
-    rect->type = SUBTITLE_BITMAP;
+    rect->type = AV_SUBTITLE_FMT_BITMAP;
     rect->linesize[0] = w;
     rect->data[0] = av_malloc(w * h);
     rect->nb_colors = 4;

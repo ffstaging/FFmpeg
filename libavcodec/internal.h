@@ -245,4 +245,22 @@ int64_t ff_guess_coded_bitrate(AVCodecContext *avctx);
 int ff_int_from_list_or_default(void *ctx, const char * val_name, int val,
                                 const int * array_valid_values, int default_value);
 
+void ff_dvdsub_parse_palette(uint32_t *palette, const char *p);
+
+/**
+ * Copies subtitle data from AVSubtitle to AVFrame.
+ *
+ * @deprecated This is a compatibility method for interoperability with
+ * the legacy subtitle API.
+ */
+int ff_frame_put_subtitle(AVFrame* frame, const AVSubtitle* sub);
+
+/**
+ * Copies subtitle data from AVFrame to AVSubtitle.
+ *
+ * @deprecated This is a compatibility method for interoperability with
+ * the legacy subtitle API.
+ */
+int ff_frame_get_subtitle(AVSubtitle* sub, AVFrame* frame);
+
 #endif /* AVCODEC_INTERNAL_H */

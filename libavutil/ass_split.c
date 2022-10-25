@@ -28,7 +28,7 @@
 #include "libavutil/error.h"
 #include "libavutil/macros.h"
 #include "libavutil/mem.h"
-#include "ass_split.h"
+#include "ass_split_internal.h"
 
 typedef enum {
     ASS_STR,
@@ -379,7 +379,7 @@ static int ass_split(ASSSplitContext *ctx, const char *buf)
     return buf ? 0 : AVERROR_INVALIDDATA;
 }
 
-ASSSplitContext *ff_ass_split(const char *buf)
+ASSSplitContext *avpriv_ass_split(const char *buf)
 {
     ASSSplitContext *ctx = av_mallocz(sizeof(*ctx));
     if (!ctx)
@@ -388,7 +388,7 @@ ASSSplitContext *ff_ass_split(const char *buf)
         buf += 3;
     ctx->current_section = -1;
     if (ass_split(ctx, buf) < 0) {
-        ff_ass_split_free(ctx);
+        avpriv_ass_split_free(ctx);
         return NULL;
     }
     return ctx;
@@ -418,7 +418,7 @@ static void free_section(ASSSplitContext *ctx, const ASSSection *section)
         av_freep((uint8_t *)&ctx->ass + section->offset);
 }
 
-void ff_ass_free_dialog(ASSDialog **dialogp)
+void avpriv_ass_free_dialog(ASSDialog **dialogp)
 {
     ASSDialog *dialog = *dialogp;
     if (!dialog)
@@ -430,7 +430,7 @@ void ff_ass_free_dialog(ASSDialog **dialogp)
     av_freep(dialogp);
 }
 
-ASSDialog *ff_ass_split_dialog(ASSSplitContext *ctx, const char *buf)
+ASSDialog *avpriv_ass_split_dialog(ASSSplitContext *ctx, const char *buf)
 {
     int i;
     static const ASSFields fields[] = {
@@ -457,7 +457,7 @@ ASSDialog *ff_ass_split_dialog(ASSSplitContext *ctx, const char *buf)
         buf = skip_space(buf);
         len = last ? strlen(buf) : strcspn(buf, ",");
         if (len >= INT_MAX) {
-            ff_ass_free_dialog(&dialog);
+            avpriv_ass_free_dialog(&dialog);
             return NULL;
         }
         convert_func[type](ptr, buf, len);
@@ -467,7 +467,7 @@ ASSDialog *ff_ass_split_dialog(ASSSplitContext *ctx, const char *buf)
     return dialog;
 }
 
-void ff_ass_split_free(ASSSplitContext *ctx)
+void avpriv_ass_split_free(ASSSplitContext *ctx)
 {
     if (ctx) {
         int i;
@@ -479,87 +479,209 @@ void ff_ass_split_free(ASSSplitContext *ctx)
     }
 }
 
+static int ass_remove_empty_braces(AVBPrint* buffer)
+{
+    char* tmp;
+    int ret = 0, n = 0;
 
-int ff_ass_split_override_codes(const ASSCodesCallbacks *callbacks, void *priv,
-                                const char *buf)
+    if (buffer == NULL || buffer->len == 0 || !av_bprint_is_complete(buffer))
+        return 0;
+
+    ret = av_bprint_finalize(buffer, &tmp);
+    if (ret)
+        return ret;
+
+    for (unsigned i = 0; i < buffer->len; i++) {
+        if (tmp[i] == '{' && tmp[i+1] == '}')
+            i++;
+        else
+            tmp[n++] = tmp[i];
+    }
+
+    tmp[n++] = '\0';
+
+    av_bprint_init(buffer, n, n);
+    av_bprint_append_data(buffer, tmp, n - 1);
+    av_free(tmp);
+
+    return ret;
+}
+
+static void ass_write_filtered_line(AVBPrint* buffer, const char *buf, int len, enum ASSSplitComponents keep_flags, enum ASSSplitComponents split_component)
+{
+    if (buffer == NULL || buf == NULL || len == 0)
+        return;
+
+    if (split_component != ASS_SPLIT_ANY && !(keep_flags & split_component))
+        return;
+
+
+    av_bprint_append_data(buffer, buf, len - 1);
+}
+
+int avpriv_ass_filter_override_codes(const ASSCodesCallbacks *callbacks, void *priv, const char *buf, AVBPrint* outbuffer, enum ASSSplitComponents keep_flags)
 {
     const char *text = NULL;
     char new_line[2];
-    int text_len = 0;
+    int text_len = 0, ret = 0;
 
     while (buf && *buf) {
-        if (text && callbacks->text &&
-            (sscanf(buf, "\\%1[nN]", new_line) == 1 ||
-             !strncmp(buf, "{\\", 2))) {
-            callbacks->text(priv, text, text_len);
+
+        if (text && (sscanf(buf, "\\%1[nN]", new_line) == 1 || !strncmp(buf, "{\\", 2))) {
+            ass_write_filtered_line(outbuffer, text, text_len + 1, keep_flags, ASS_SPLIT_TEXT | ASS_SPLIT_TEXT2);
+
+            if (callbacks->text)
+                callbacks->text(priv, text, text_len);
             text = NULL;
         }
+
         if (sscanf(buf, "\\%1[nN]", new_line) == 1) {
             if (callbacks->new_line)
                 callbacks->new_line(priv, new_line[0] == 'N');
+            ass_write_filtered_line(outbuffer, buf, 3, keep_flags, ASS_SPLIT_ANY);
             buf += 2;
         } else if (!strncmp(buf, "{\\", 2)) {
+            ass_write_filtered_line(outbuffer, buf, 2, keep_flags, ASS_SPLIT_ANY);
             buf++;
             while (*buf == '\\') {
-                char style[2], c[2], sep[2], c_num[2] = "0", tmp[128] = {0};
+                char style[4], c[2], axis[3], sep[3], c_num[2] = "0", tmp[128] = {0};
                 unsigned int color = 0xFFFFFFFF;
-                int len, size = -1, an = -1, alpha = -1;
-                int x1, y1, x2, y2, t1 = -1, t2 = -1;
+                int len, size = -1, an = -1, alpha = -1, scale = 0;
+                float f1 = 1;
+                int x1, y1, x2, y2, x3, t1 = -1, t2 = -1, t3 = -1, t4 = -1, accel = 1;
                 if (sscanf(buf, "\\%1[bisu]%1[01\\}]%n", style, c, &len) > 1) {
                     int close = c[0] == '0' ? 1 : c[0] == '1' ? 0 : -1;
                     len += close != -1;
+                    switch (c[0]) {
+                    case 'b':
+                        ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_FONT_BOLD);
+                        break;
+                    case 'u':
+                        ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_FONT_UNDERLINE);
+                        break;
+                    case 'i':
+                        ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_FONT_ITALIC);
+                        break;
+                    case 'a':
+                        ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_FONT_STRIKEOUT);
+                        break;
+                    }
                     if (callbacks->style)
                         callbacks->style(priv, style[0], close);
                 } else if (sscanf(buf, "\\c%1[\\}]%n", sep, &len) > 0 ||
                            sscanf(buf, "\\c&H%X&%1[\\}]%n", &color, sep, &len) > 1 ||
                            sscanf(buf, "\\%1[1234]c%1[\\}]%n", c_num, sep, &len) > 1 ||
                            sscanf(buf, "\\%1[1234]c&H%X&%1[\\}]%n", c_num, &color, sep, &len) > 2) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_COLOR);
                     if (callbacks->color)
                         callbacks->color(priv, color, c_num[0] - '0');
                 } else if (sscanf(buf, "\\alpha%1[\\}]%n", sep, &len) > 0 ||
                            sscanf(buf, "\\alpha&H%2X&%1[\\}]%n", &alpha, sep, &len) > 1 ||
                            sscanf(buf, "\\%1[1234]a%1[\\}]%n", c_num, sep, &len) > 1 ||
                            sscanf(buf, "\\%1[1234]a&H%2X&%1[\\}]%n", c_num, &alpha, sep, &len) > 2) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_ALPHA);
                     if (callbacks->alpha)
                         callbacks->alpha(priv, alpha, c_num[0] - '0');
                 } else if (sscanf(buf, "\\fn%1[\\}]%n", sep, &len) > 0 ||
                            sscanf(buf, "\\fn%127[^\\}]%1[\\}]%n", tmp, sep, &len) > 1) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_FONT_NAME);
                     if (callbacks->font_name)
                         callbacks->font_name(priv, tmp[0] ? tmp : NULL);
                 } else if (sscanf(buf, "\\fs%1[\\}]%n", sep, &len) > 0 ||
                            sscanf(buf, "\\fs%u%1[\\}]%n", &size, sep, &len) > 1) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_FONT_SIZE);
                     if (callbacks->font_size)
                         callbacks->font_size(priv, size);
+                } else if (sscanf(buf, "\\fscx%1[\\}]%n", sep, &len) > 0 ||
+                           sscanf(buf, "\\fscx%f%1[\\}]%n", &f1, sep, &len) > 1) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_FONT_SCALE);
+                } else if (sscanf(buf, "\\fscy%1[\\}]%n", sep, &len) > 0 ||
+                           sscanf(buf, "\\fscy%f%1[\\}]%n", &f1, sep, &len) > 1) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_FONT_SCALE);
+                } else if (sscanf(buf, "\\fsp%1[\\}]%n", sep, &len) > 0 ||
+                           sscanf(buf, "\\fsp%u%1[\\}]%n", &size, sep, &len) > 1) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_FONT_SPACING);
+                } else if (sscanf(buf, "\\fe%1[\\}]%n", sep, &len) > 0 ||
+                           sscanf(buf, "\\fe%u%1[\\}]%n", &size, sep, &len) > 1) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_FONT_CHARSET);
+                } else if (sscanf(buf, "\\bord%1[\\}]%n", sep, &len) > 0 ||
+                           sscanf(buf, "\\bord%u%1[\\}]%n", &size, sep, &len) > 1) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_TEXT_BORDER);
+                } else if (sscanf(buf, "\\shad%1[\\}]%n", sep, &len) > 0 ||
+                           sscanf(buf, "\\shad%u%1[\\}]%n", &size, sep, &len) > 1) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_TEXT_SHADOW);
+                } else if (sscanf(buf, "\\fr%1[\\}]%n", sep, &len) > 0 ||
+                           sscanf(buf, "\\fr%u%1[\\}]%n", &x1, sep, &len) > 1 ||
+                           sscanf(buf, "\\fr%1[xyz]%1[\\}]%n", axis, sep, &len) > 1 ||
+                           sscanf(buf, "\\fr%1[xyz]%u%1[\\}]%n", axis, &size, sep, &len) > 2) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_TEXT_ROTATE);
+                } else if (sscanf(buf, "\\blur%1[\\}]%n", sep, &len) > 0 ||
+                           sscanf(buf, "\\blur%u%1[\\}]%n", &size, sep, &len) > 1) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_TEXT_BLUR);
+                } else if (sscanf(buf, "\\be%1[\\}]%n", sep, &len) > 0 ||
+                           sscanf(buf, "\\be%u%1[\\}]%n", &size, sep, &len) > 1) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_TEXT_BLUR);
+                } else if (sscanf(buf, "\\q%1[\\}]%n", sep, &len) > 0 ||
+                           sscanf(buf, "\\q%u%1[\\}]%n", &size, sep, &len) > 1) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_TEXT_WRAP);
                 } else if (sscanf(buf, "\\a%1[\\}]%n", sep, &len) > 0 ||
                            sscanf(buf, "\\a%2u%1[\\}]%n", &an, sep, &len) > 1 ||
                            sscanf(buf, "\\an%1[\\}]%n", sep, &len) > 0 ||
                            sscanf(buf, "\\an%1u%1[\\}]%n", &an, sep, &len) > 1) {
                     if (an != -1 && buf[2] != 'n')
                         an = (an&3) + (an&4 ? 6 : an&8 ? 3 : 0);
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_TEXT_ALIGNMENT);
                     if (callbacks->alignment)
                         callbacks->alignment(priv, an);
                 } else if (sscanf(buf, "\\r%1[\\}]%n", sep, &len) > 0 ||
                            sscanf(buf, "\\r%127[^\\}]%1[\\}]%n", tmp, sep, &len) > 1) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_CANCELLING);
                     if (callbacks->cancel_overrides)
                         callbacks->cancel_overrides(priv, tmp);
                 } else if (sscanf(buf, "\\move(%d,%d,%d,%d)%1[\\}]%n", &x1, &y1, &x2, &y2, sep, &len) > 4 ||
                            sscanf(buf, "\\move(%d,%d,%d,%d,%d,%d)%1[\\}]%n", &x1, &y1, &x2, &y2, &t1, &t2, sep, &len) > 6) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_MOVE);
                     if (callbacks->move)
                         callbacks->move(priv, x1, y1, x2, y2, t1, t2);
                 } else if (sscanf(buf, "\\pos(%d,%d)%1[\\}]%n", &x1, &y1, sep, &len) > 2) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_POS);
                     if (callbacks->move)
                         callbacks->move(priv, x1, y1, x1, y1, -1, -1);
                 } else if (sscanf(buf, "\\org(%d,%d)%1[\\}]%n", &x1, &y1, sep, &len) > 2) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_ORIGIN);
                     if (callbacks->origin)
                         callbacks->origin(priv, x1, y1);
+                } else if (sscanf(buf, "\\t(%1[\\}]%n", sep, &len) > 0 ||
+                           sscanf(buf, "\\t(%d,%d,%1[\\}]%n", &t1, &t2, sep, &len) > 2 ||
+                           sscanf(buf, "\\t(%d,%d,%d,%1[\\}]%n", &t1, &t2, &accel, sep, &len) > 3) {
+
+                    len = strcspn(buf, ")") + 2;
+
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_ANIMATE);
+                    if (callbacks->animate)
+                        callbacks->animate(priv, t1, t2, accel, tmp);
+                } else if (sscanf(buf, "\\fade(%d,%d,%d,%d,%d,%d,%d)%1[\\}]%n", &x1, &x2, &x3, &t1, &t2, &t3, &t4, sep, &len) > 7) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_FADE);
+                } else if (sscanf(buf, "\\fad(%d,%d)%1[\\}]%n", &t1, &t2, sep, &len) > 2) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_FADE);
+                } else if (sscanf(buf, "\\clip(%d,%d,%d,%d)%1[\\}]%n", &x1, &y1, &x2, &y2, sep, &len) > 4) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_CLIP);
+                } else if (sscanf(buf, "\\p%1[\\}]%n", sep, &len) > 0 ||
+                           sscanf(buf, "\\p%u%1[\\}]%n", &scale, sep, &len) > 1) {
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_DRAW);
+                    if (callbacks->drawing_mode)
+                        callbacks->drawing_mode(priv, scale);
                 } else {
-                    len = strcspn(buf+1, "\\}") + 2;  /* skip unknown code */
-                }
+                    len = strcspn(buf+1, "\\}") + 2;  /* unknown code */
+                    ass_write_filtered_line(outbuffer, buf, len, keep_flags, ASS_SPLIT_UNKNOWN);
+             }
                 buf += len - 1;
             }
             if (*buf++ != '}')
                 return AVERROR_INVALIDDATA;
-        } else {
+
+            ass_write_filtered_line(outbuffer, "}", 2, keep_flags, ASS_SPLIT_ANY);
+     } else {
             if (!text) {
                 text = buf;
                 text_len = 1;
@@ -568,14 +690,27 @@ int ff_ass_split_override_codes(const ASSCodesCallbacks *callbacks, void *priv,
             buf++;
         }
     }
+    if (text)
+        ass_write_filtered_line(outbuffer, text, text_len + 1, keep_flags, ASS_SPLIT_TEXT | ASS_SPLIT_TEXT2);
     if (text && callbacks->text)
         callbacks->text(priv, text, text_len);
     if (callbacks->end)
         callbacks->end(priv);
-    return 0;
+
+    if (outbuffer)
+        ret = ass_remove_empty_braces(outbuffer);
+
+    return ret;
 }
 
-ASSStyle *ff_ass_style_get(ASSSplitContext *ctx, const char *style)
+
+int avpriv_ass_split_override_codes(const ASSCodesCallbacks *callbacks, void *priv,
+                                const char *buf)
+{
+    return avpriv_ass_filter_override_codes(callbacks, priv, buf, NULL, 0);
+}
+
+ASSStyle *avpriv_ass_style_get(ASSSplitContext *ctx, const char *style)
 {
     ASS *ass = &ctx->ass;
     int i;

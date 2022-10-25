@@ -915,6 +915,7 @@ static void add_input_streams(OptionsContext *o, AVFormatContext *ic)
                 av_log(NULL, AV_LOG_FATAL, "Invalid canvas size: %s.\n", canvas_size);
                 exit_program(1);
             }
+            ist->subtitle_kickoff.is_active = 1;
             break;
         }
         case AVMEDIA_TYPE_ATTACHMENT:

@@ -3691,6 +3691,7 @@ frei0r_filter_deps="frei0r"
 frei0r_src_filter_deps="frei0r"
 fspp_filter_deps="gpl"
 gblur_vulkan_filter_deps="vulkan spirv_compiler"
+graphicsub2text_filter_deps="libtesseract"
 hflip_vulkan_filter_deps="vulkan spirv_compiler"
 histeq_filter_deps="gpl"
 hqdn3d_filter_deps="gpl"
@@ -3720,6 +3721,7 @@ overlay_qsv_filter_deps="libmfx"
 overlay_qsv_filter_select="qsvvpp"
 overlay_vaapi_filter_deps="vaapi VAProcPipelineCaps_blend_flags"
 overlay_vulkan_filter_deps="vulkan spirv_compiler"
+overlaytextsubs_filter_deps="avcodec libass"
 owdenoise_filter_deps="gpl"
 pad_opencl_filter_deps="opencl"
 pan_filter_deps="swresample"
@@ -3756,9 +3758,13 @@ spp_filter_select="fft idctdsp fdctdsp me_cmp pixblockdsp"
 sr_filter_deps="avformat swscale"
 sr_filter_select="dnn"
 stereo3d_filter_deps="gpl"
+splitcc_filter_deps="avcodec"
+subscale_filter_deps="swscale avcodec"
 subtitles_filter_deps="avformat avcodec libass"
 super2xsai_filter_deps="gpl"
 pixfmts_super2xsai_test_deps="super2xsai_filter"
+text2graphicsub_filter_deps="avformat avcodec libass"
+textsub2video_filter_deps="avcodec libass"
 tinterlace_filter_deps="gpl"
 tinterlace_merge_test_deps="tinterlace_filter"
 tinterlace_pad_test_deps="tinterlace_filter"
@@ -3840,7 +3846,7 @@ avutil_extralibs="d3d11va_extralibs nanosleep_extralibs pthreads_extralibs vaapi
 # programs
 ffmpeg_deps="avcodec avfilter avformat threads"
 ffmpeg_select="aformat_filter anull_filter atrim_filter format_filter
-               hflip_filter null_filter
+               snull_filter strim_filter hflip_filter null_filter
                transpose_filter trim_filter vflip_filter"
 ffmpeg_suggest="ole32 psapi shell32"
 ffplay_deps="avcodec avformat swscale swresample sdl2"
@@ -7959,7 +7965,7 @@ print_enabled_components(){
         fi
     done
     if [ "$name" = "filter_list" ]; then
-        for c in asrc_abuffer vsrc_buffer asink_abuffer vsink_buffer; do
+        for c in asrc_abuffer vsrc_buffer ssrc_sbuffer asink_abuffer vsink_buffer ssink_sbuffer; do
             printf "    &ff_%s,\n" $c >> $TMPH
         done
     fi

@@ -43,6 +43,7 @@
 #include "formats.h"
 #include "framepool.h"
 #include "internal.h"
+#include "subtitles.h"
 
 static void tlog_ref(void *ctx, AVFrame *ref, int end)
 {
@@ -53,7 +54,8 @@ static void tlog_ref(void *ctx, AVFrame *ref, int end)
             ref->linesize[0], ref->linesize[1], ref->linesize[2], ref->linesize[3],
             ref->pts, ref->pkt_pos);
 
-    if (ref->width) {
+    switch(ref->type) {
+    case AVMEDIA_TYPE_VIDEO:
         ff_tlog(ctx, " a:%d/%d s:%dx%d i:%c iskey:%d type:%c",
                 ref->sample_aspect_ratio.num, ref->sample_aspect_ratio.den,
                 ref->width, ref->height,
@@ -61,8 +63,8 @@ static void tlog_ref(void *ctx, AVFrame *ref, int end)
                 ref->top_field_first ? 'T' : 'B',    /* Top / Bottom */
                 ref->key_frame,
                 av_get_picture_type_char(ref->pict_type));
-    }
-    if (ref->nb_samples) {
+        break;
+    case AVMEDIA_TYPE_AUDIO:
         AVBPrint bprint;
 
         av_bprint_init(&bprint, 1, AV_BPRINT_SIZE_UNLIMITED);
@@ -72,6 +74,7 @@ static void tlog_ref(void *ctx, AVFrame *ref, int end)
                 ref->nb_samples,
                 ref->sample_rate);
         av_bprint_finalize(&bprint, NULL);
+        break;
     }
 
     ff_tlog(ctx, "]%s", end ? "\n" : "");
@@ -355,6 +358,14 @@ int avfilter_config_links(AVFilterContext *filter)
 
                 if (!link->time_base.num && !link->time_base.den)
                     link->time_base = (AVRational) {1, link->sample_rate};
+
+                break;
+
+            case AVMEDIA_TYPE_SUBTITLE:
+                if (!link->time_base.num && !link->time_base.den)
+                    link->time_base = inlink ? inlink->time_base : AV_TIME_BASE_Q;
+
+                break;
             }
 
             if (link->src->nb_inputs && link->src->inputs[0]->hw_frames_ctx &&
@@ -450,7 +461,7 @@ static int64_t guess_status_pts(AVFilterContext *ctx, int status, AVRational lin
     return AV_NOPTS_VALUE;
 }
 
-static int ff_request_frame_to_filter(AVFilterLink *link)
+static int ff_request_frame_to_filter(AVFilterLink *link, int input_index)
 {
     int ret = -1;
 
@@ -459,8 +470,8 @@ static int ff_request_frame_to_filter(AVFilterLink *link)
     link->frame_blocked_in = 1;
     if (link->srcpad->request_frame)
         ret = link->srcpad->request_frame(link);
-    else if (link->src->inputs[0])
-        ret = ff_request_frame(link->src->inputs[0]);
+    else if (link->src->inputs[input_index])
+        ret = ff_request_frame(link->src->inputs[input_index]);
     if (ret < 0) {
         if (ret != AVERROR(EAGAIN) && ret != link->status_in)
             ff_avfilter_link_set_in_status(link, ret, guess_status_pts(link->src, ret, link->time_base));
@@ -1022,6 +1033,10 @@ int ff_filter_frame(AVFilterLink *link, AVFrame *frame)
             av_assert1(frame->width               == link->w);
             av_assert1(frame->height               == link->h);
         }
+    } else if (link->type == AVMEDIA_TYPE_SUBTITLE) {
+        if (frame->format != link->format) {
+            av_log(link->dst, AV_LOG_WARNING, "Subtitle format change from %d to %d\n", link->format, frame->format);
+        }
     } else {
         if (frame->format != link->format) {
             av_log(link->dst, AV_LOG_ERROR, "Format change is not supported\n");
@@ -1156,6 +1171,14 @@ static int forward_status_change(AVFilterContext *filter, AVFilterLink *in)
 {
     unsigned out = 0, progress = 0;
     int ret;
+    int input_index = 0;
+
+    for (int i = 0; i < in->dst->nb_inputs; i++) {
+        if (&in->dst->input_pads[i] == in->dstpad) {
+            input_index = i;
+            break;
+        }
+    }
 
     av_assert0(!in->status_out);
     if (!filter->nb_outputs) {
@@ -1165,7 +1188,7 @@ static int forward_status_change(AVFilterContext *filter, AVFilterLink *in)
     while (!in->status_out) {
         if (!filter->outputs[out]->status_in) {
             progress++;
-            ret = ff_request_frame_to_filter(filter->outputs[out]);
+            ret = ff_request_frame_to_filter(filter->outputs[out], input_index);
             if (ret < 0)
                 return ret;
         }
@@ -1202,7 +1225,7 @@ static int ff_filter_activate_default(AVFilterContext *filter)
     for (i = 0; i < filter->nb_outputs; i++) {
         if (filter->outputs[i]->frame_wanted_out &&
             !filter->outputs[i]->frame_blocked_in) {
-            return ff_request_frame_to_filter(filter->outputs[i]);
+            return ff_request_frame_to_filter(filter->outputs[i], 0);
         }
     }
     return FFERROR_NOT_READY;
@@ -1461,6 +1484,9 @@ int ff_inlink_make_frame_writable(AVFilterLink *link, AVFrame **rframe)
         break;
     case AVMEDIA_TYPE_AUDIO:
         out = ff_get_audio_buffer(link, frame->nb_samples);
+        break;
+    case AVMEDIA_TYPE_SUBTITLE:
+        out = ff_get_subtitles_buffer(link, link->format);
         break;
     default:
         return AVERROR(EINVAL);

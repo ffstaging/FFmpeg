@@ -73,7 +73,7 @@ static int mpl2_decode_frame(AVCodecContext *avctx, AVSubtitle *sub,
 
     av_bprint_init(&buf, 0, AV_BPRINT_SIZE_UNLIMITED);
     if (ptr && avpkt->size > 0 && *ptr && !mpl2_event_to_ass(&buf, ptr))
-        ret = ff_ass_add_rect(sub, buf.str, s->readorder++, 0, NULL, NULL);
+        ret = avpriv_ass_add_rect(sub, buf.str, s->readorder++, 0, NULL, NULL);
     av_bprint_finalize(&buf, NULL);
     if (ret < 0)
         return ret;

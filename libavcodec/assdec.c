@@ -22,9 +22,9 @@
 #include <string.h>
 
 #include "avcodec.h"
-#include "ass.h"
 #include "codec_internal.h"
 #include "config_components.h"
+#include "libavutil/ass_internal.h"
 #include "libavutil/internal.h"
 #include "libavutil/mem.h"
 
@@ -53,7 +53,7 @@ static int ass_decode_frame(AVCodecContext *avctx, AVSubtitle *sub,
     if (!sub->rects[0])
         return AVERROR(ENOMEM);
     sub->num_rects = 1;
-    sub->rects[0]->type = SUBTITLE_ASS;
+    sub->rects[0]->type = AV_SUBTITLE_FMT_ASS;
     sub->rects[0]->ass  = av_strdup(avpkt->data);
     if (!sub->rects[0]->ass)
         return AVERROR(ENOMEM);

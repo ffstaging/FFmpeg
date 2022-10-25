@@ -272,15 +272,12 @@ static av_cold int init_decoder(AVCodecContext *avctx)
     ctx->bg_color = CCCOL_BLACK;
     ctx->rollup = 2;
     ctx->cursor_row = 10;
-    ret = ff_ass_subtitle_header(avctx, "Monospace",
+    ret = ff_ass_subtitle_header_full(avctx, ASS_DEFAULT_PLAYRESX, ASS_DEFAULT_PLAYRESY, "Monospace",
                                  ASS_DEFAULT_FONT_SIZE,
-                                 ASS_DEFAULT_COLOR,
-                                 ASS_DEFAULT_BACK_COLOR,
-                                 ASS_DEFAULT_BOLD,
-                                 ASS_DEFAULT_ITALIC,
-                                 ASS_DEFAULT_UNDERLINE,
-                                 3,
-                                 ASS_DEFAULT_ALIGNMENT);
+                                 ASS_DEFAULT_COLOR, ASS_DEFAULT_COLOR,
+                                 ASS_DEFAULT_BACK_COLOR, ASS_DEFAULT_BACK_COLOR,
+                                 ASS_DEFAULT_BOLD, ASS_DEFAULT_ITALIC, ASS_DEFAULT_UNDERLINE,
+                                 3, ASS_DEFAULT_ALIGNMENT);
     if (ret < 0) {
         return ret;
     }
@@ -850,7 +847,6 @@ static int decode(AVCodecContext *avctx, AVSubtitle *sub,
     int len = avpkt->size;
     int ret = 0;
     int i;
-    unsigned nb_rect_allocated = 0;
 
     for (i = 0; i < len; i += 3) {
         uint8_t hi, cc_type = bptr[i] & 1;
@@ -887,7 +883,7 @@ static int decode(AVCodecContext *avctx, AVSubtitle *sub,
                                                      AV_TIME_BASE_Q, ms_tb);
             else
                 sub->end_display_time = -1;
-            ret = ff_ass_add_rect2(sub, ctx->buffer[bidx].str, ctx->readorder++, 0, NULL, NULL, &nb_rect_allocated);
+            ret = avpriv_ass_add_rect(sub, ctx->buffer[bidx].str, ctx->readorder++, 0, NULL, NULL);
             if (ret < 0)
                 return ret;
             ctx->last_real_time = sub->pts;
@@ -897,7 +893,7 @@ static int decode(AVCodecContext *avctx, AVSubtitle *sub,
 
     if (!bptr && !ctx->real_time && ctx->buffer[!ctx->buffer_index].str[0]) {
         bidx = !ctx->buffer_index;
-        ret = ff_ass_add_rect2(sub, ctx->buffer[bidx].str, ctx->readorder++, 0, NULL, NULL, &nb_rect_allocated);
+        ret = avpriv_ass_add_rect(sub, ctx->buffer[bidx].str, ctx->readorder++, 0, NULL, NULL);
         if (ret < 0)
             return ret;
         sub->pts = ctx->buffer_time[1];
@@ -915,7 +911,7 @@ static int decode(AVCodecContext *avctx, AVSubtitle *sub,
         capture_screen(ctx);
         ctx->buffer_changed = 0;
 
-        ret = ff_ass_add_rect2(sub, ctx->buffer[bidx].str, ctx->readorder++, 0, NULL, NULL, &nb_rect_allocated);
+        ret = avpriv_ass_add_rect(sub, ctx->buffer[bidx].str, ctx->readorder++, 0, NULL, NULL);
         if (ret < 0)
             return ret;
         sub->end_display_time = -1;

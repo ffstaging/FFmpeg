@@ -374,6 +374,8 @@ extern const AVFilter ff_vf_overlay_qsv;
 extern const AVFilter ff_vf_overlay_vaapi;
 extern const AVFilter ff_vf_overlay_vulkan;
 extern const AVFilter ff_vf_overlay_cuda;
+extern const AVFilter ff_vf_overlaygraphicsubs;
+extern const AVFilter ff_vf_overlaytextsubs;
 extern const AVFilter ff_vf_owdenoise;
 extern const AVFilter ff_vf_pad;
 extern const AVFilter ff_vf_pad_opencl;
@@ -564,6 +566,8 @@ extern const AVFilter ff_avf_showspectrumpic;
 extern const AVFilter ff_avf_showvolume;
 extern const AVFilter ff_avf_showwaves;
 extern const AVFilter ff_avf_showwavespic;
+extern const AVFilter ff_svf_graphicsub2video;
+extern const AVFilter ff_svf_textsub2video;
 extern const AVFilter ff_vaf_spectrumsynth;
 
 /* multimedia sources */
@@ -571,14 +575,29 @@ extern const AVFilter ff_avsrc_avsynctest;
 extern const AVFilter ff_avsrc_amovie;
 extern const AVFilter ff_avsrc_movie;
 
+/* subtitle filters */
+extern const AVFilter ff_sf_censor;
+extern const AVFilter ff_sf_graphicsub2text;
+extern const AVFilter ff_sf_showspeaker;
+extern const AVFilter ff_sf_snull;
+extern const AVFilter ff_sf_splitcc;
+extern const AVFilter ff_sf_strim;
+extern const AVFilter ff_sf_stripstyles;
+extern const AVFilter ff_sf_subfeed;
+extern const AVFilter ff_sf_subscale;
+extern const AVFilter ff_sf_text2graphicsub;
+extern const AVFilter ff_sf_textmod;
+
 /* those filters are part of public or internal API,
  * they are formatted to not be found by the grep
  * as they are manually added again (due to their 'names'
  * being the same while having different 'types'). */
 extern  const AVFilter ff_asrc_abuffer;
 extern  const AVFilter ff_vsrc_buffer;
+extern  const AVFilter ff_ssrc_sbuffer;
 extern  const AVFilter ff_asink_abuffer;
 extern  const AVFilter ff_vsink_buffer;
+extern  const AVFilter ff_ssink_sbuffer;
 extern const AVFilter ff_af_afifo;
 extern const AVFilter ff_vf_fifo;
 

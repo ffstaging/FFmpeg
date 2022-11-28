@@ -38,6 +38,10 @@
 #include "h264_ps.h"
 #include "h264_sei.h"
 #include "sei.h"
+#include "libavutil/display.h"
+#include "libavutil/film_grain_params.h"
+#include "libavutil/stereo3d.h"
+#include "libavutil/timecode.h"
 
 #define AVERROR_PS_NOT_FOUND      FFERRTAG(0xF8,'?','P','S')
 
@@ -586,4 +590,197 @@ const char *ff_h264_sei_stereo_mode(const H264SEIFramePacking *h)
     } else {
         return NULL;
     }
+}
+
+int ff_h264_set_sei_to_frame(AVCodecContext *avctx, H264SEIContext *sei, AVFrame *out, const SPS *sps, uint64_t seed)
+{
+    if (sei->frame_packing.present &&
+        sei->frame_packing.arrangement_type <= 6 &&
+        sei->frame_packing.content_interpretation_type > 0 &&
+        sei->frame_packing.content_interpretation_type < 3) {
+        H264SEIFramePacking *fp = &sei->frame_packing;
+        AVStereo3D *stereo = av_stereo3d_create_side_data(out);
+        if (stereo) {
+        switch (fp->arrangement_type) {
+        case H264_SEI_FPA_TYPE_CHECKERBOARD:
+            stereo->type = AV_STEREO3D_CHECKERBOARD;
+            break;
+        case H264_SEI_FPA_TYPE_INTERLEAVE_COLUMN:
+            stereo->type = AV_STEREO3D_COLUMNS;
+            break;
+        case H264_SEI_FPA_TYPE_INTERLEAVE_ROW:
+            stereo->type = AV_STEREO3D_LINES;
+            break;
+        case H264_SEI_FPA_TYPE_SIDE_BY_SIDE:
+            if (fp->quincunx_sampling_flag)
+                stereo->type = AV_STEREO3D_SIDEBYSIDE_QUINCUNX;
+            else
+                stereo->type = AV_STEREO3D_SIDEBYSIDE;
+            break;
+        case H264_SEI_FPA_TYPE_TOP_BOTTOM:
+            stereo->type = AV_STEREO3D_TOPBOTTOM;
+            break;
+        case H264_SEI_FPA_TYPE_INTERLEAVE_TEMPORAL:
+            stereo->type = AV_STEREO3D_FRAMESEQUENCE;
+            break;
+        case H264_SEI_FPA_TYPE_2D:
+            stereo->type = AV_STEREO3D_2D;
+            break;
+        }
+
+        if (fp->content_interpretation_type == 2)
+            stereo->flags = AV_STEREO3D_FLAG_INVERT;
+
+        if (fp->arrangement_type == H264_SEI_FPA_TYPE_INTERLEAVE_TEMPORAL) {
+            if (fp->current_frame_is_frame0_flag)
+                stereo->view = AV_STEREO3D_VIEW_LEFT;
+            else
+                stereo->view = AV_STEREO3D_VIEW_RIGHT;
+        }
+        }
+    }
+
+    if (sei->display_orientation.present &&
+        (sei->display_orientation.anticlockwise_rotation ||
+         sei->display_orientation.hflip ||
+         sei->display_orientation.vflip)) {
+        H264SEIDisplayOrientation *o = &sei->display_orientation;
+        double angle = o->anticlockwise_rotation * 360 / (double) (1 << 16);
+        AVFrameSideData *rotation = av_frame_new_side_data(out,
+                                                           AV_FRAME_DATA_DISPLAYMATRIX,
+                                                           sizeof(int32_t) * 9);
+        if (rotation) {
+            /* av_display_rotation_set() expects the angle in the clockwise
+             * direction, hence the first minus.
+             * The below code applies the flips after the rotation, yet
+             * the H.2645 specs require flipping to be applied first.
+             * Because of R O(phi) = O(-phi) R (where R is flipping around
+             * an arbitatry axis and O(phi) is the proper rotation by phi)
+             * we can create display matrices as desired by negating
+             * the degree once for every flip applied. */
+            angle = -angle * (1 - 2 * !!o->hflip) * (1 - 2 * !!o->vflip);
+            av_display_rotation_set((int32_t *)rotation->data, angle);
+            av_display_matrix_flip((int32_t *)rotation->data,
+                                   o->hflip, o->vflip);
+        }
+    }
+
+    if (sei->afd.present) {
+        AVFrameSideData *sd = av_frame_new_side_data(out, AV_FRAME_DATA_AFD,
+                                                     sizeof(uint8_t));
+
+        if (sd) {
+            *sd->data = sei->afd.active_format_description;
+            sei->afd.present = 0;
+        }
+    }
+
+    if (sei->a53_caption.buf_ref) {
+        H264SEIA53Caption *a53 = &sei->a53_caption;
+
+        AVFrameSideData *sd = av_frame_new_side_data_from_buf(out, AV_FRAME_DATA_A53_CC, a53->buf_ref);
+        if (!sd)
+            av_buffer_unref(&a53->buf_ref);
+        a53->buf_ref = NULL;
+
+        avctx->properties |= FF_CODEC_PROPERTY_CLOSED_CAPTIONS;
+    }
+
+    for (int i = 0; i < sei->unregistered.nb_buf_ref; i++) {
+        H264SEIUnregistered *unreg = &sei->unregistered;
+
+        if (unreg->buf_ref[i]) {
+            AVFrameSideData *sd = av_frame_new_side_data_from_buf(out,
+                    AV_FRAME_DATA_SEI_UNREGISTERED,
+                    unreg->buf_ref[i]);
+            if (!sd)
+                av_buffer_unref(&unreg->buf_ref[i]);
+            unreg->buf_ref[i] = NULL;
+        }
+    }
+    sei->unregistered.nb_buf_ref = 0;
+
+    if (sps && sei->film_grain_characteristics.present) {
+        H264SEIFilmGrainCharacteristics *fgc = &sei->film_grain_characteristics;
+        AVFilmGrainParams *fgp = av_film_grain_params_create_side_data(out);
+        if (!fgp)
+            return AVERROR(ENOMEM);
+
+        fgp->type = AV_FILM_GRAIN_PARAMS_H274;
+        fgp->seed = seed;
+
+        fgp->codec.h274.model_id = fgc->model_id;
+        if (fgc->separate_colour_description_present_flag) {
+            fgp->codec.h274.bit_depth_luma = fgc->bit_depth_luma;
+            fgp->codec.h274.bit_depth_chroma = fgc->bit_depth_chroma;
+            fgp->codec.h274.color_range = fgc->full_range + 1;
+            fgp->codec.h274.color_primaries = fgc->color_primaries;
+            fgp->codec.h274.color_trc = fgc->transfer_characteristics;
+            fgp->codec.h274.color_space = fgc->matrix_coeffs;
+        } else {
+            fgp->codec.h274.bit_depth_luma = sps->bit_depth_luma;
+            fgp->codec.h274.bit_depth_chroma = sps->bit_depth_chroma;
+            if (sps->video_signal_type_present_flag)
+                fgp->codec.h274.color_range = sps->full_range + 1;
+            else
+                fgp->codec.h274.color_range = AVCOL_RANGE_UNSPECIFIED;
+            if (sps->colour_description_present_flag) {
+                fgp->codec.h274.color_primaries = sps->color_primaries;
+                fgp->codec.h274.color_trc = sps->color_trc;
+                fgp->codec.h274.color_space = sps->colorspace;
+            } else {
+                fgp->codec.h274.color_primaries = AVCOL_PRI_UNSPECIFIED;
+                fgp->codec.h274.color_trc = AVCOL_TRC_UNSPECIFIED;
+                fgp->codec.h274.color_space = AVCOL_SPC_UNSPECIFIED;
+            }
+        }
+        fgp->codec.h274.blending_mode_id = fgc->blending_mode_id;
+        fgp->codec.h274.log2_scale_factor = fgc->log2_scale_factor;
+
+        memcpy(&fgp->codec.h274.component_model_present, &fgc->comp_model_present_flag,
+               sizeof(fgp->codec.h274.component_model_present));
+        memcpy(&fgp->codec.h274.num_intensity_intervals, &fgc->num_intensity_intervals,
+               sizeof(fgp->codec.h274.num_intensity_intervals));
+        memcpy(&fgp->codec.h274.num_model_values, &fgc->num_model_values,
+               sizeof(fgp->codec.h274.num_model_values));
+        memcpy(&fgp->codec.h274.intensity_interval_lower_bound, &fgc->intensity_interval_lower_bound,
+               sizeof(fgp->codec.h274.intensity_interval_lower_bound));
+        memcpy(&fgp->codec.h274.intensity_interval_upper_bound, &fgc->intensity_interval_upper_bound,
+               sizeof(fgp->codec.h274.intensity_interval_upper_bound));
+        memcpy(&fgp->codec.h274.comp_model_value, &fgc->comp_model_value,
+               sizeof(fgp->codec.h274.comp_model_value));
+
+        fgc->present = !!fgc->repetition_period;
+
+        avctx->properties |= FF_CODEC_PROPERTY_FILM_GRAIN;
+    }
+
+    if (sei->picture_timing.timecode_cnt > 0) {
+        uint32_t *tc_sd;
+        char tcbuf[AV_TIMECODE_STR_SIZE];
+
+        AVFrameSideData *tcside = av_frame_new_side_data(out,
+                                                         AV_FRAME_DATA_S12M_TIMECODE,
+                                                         sizeof(uint32_t)*4);
+        if (!tcside)
+            return AVERROR(ENOMEM);
+
+        tc_sd = (uint32_t*)tcside->data;
+        tc_sd[0] = sei->picture_timing.timecode_cnt;
+
+        for (int i = 0; i < tc_sd[0]; i++) {
+            int drop = sei->picture_timing.timecode[i].dropframe;
+            int   hh = sei->picture_timing.timecode[i].hours;
+            int   mm = sei->picture_timing.timecode[i].minutes;
+            int   ss = sei->picture_timing.timecode[i].seconds;
+            int   ff = sei->picture_timing.timecode[i].frame;
+
+            tc_sd[i + 1] = av_timecode_get_smpte(avctx->framerate, drop, hh, mm, ss, ff);
+            av_timecode_make_smpte_tc_string2(tcbuf, avctx->framerate, tc_sd[i + 1], 0, 0);
+            av_dict_set(&out->metadata, "timecode", tcbuf, 0);
+        }
+        sei->picture_timing.timecode_cnt = 0;
+    }
+
+    return 0;
 }

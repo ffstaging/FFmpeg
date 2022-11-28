@@ -221,4 +221,6 @@ const char *ff_h264_sei_stereo_mode(const H264SEIFramePacking *h);
 int ff_h264_sei_process_picture_timing(H264SEIPictureTiming *h, const SPS *sps,
                                        void *logctx);
 
+int ff_h264_set_sei_to_frame(AVCodecContext *avctx, H264SEIContext *sei, AVFrame *out, const SPS *sps, uint64_t seed);
+
 #endif /* AVCODEC_H264_SEI_H */

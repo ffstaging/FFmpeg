@@ -27,6 +27,7 @@
 
 #include "get_bits.h"
 #include "hevc.h"
+#include "hevc_ps.h"
 #include "sei.h"
 
 
@@ -165,5 +166,7 @@ int ff_hevc_decode_nal_sei(GetBitContext *gb, void *logctx, HEVCSEI *s,
  * @param s HEVCContext.
  */
 void ff_hevc_reset_sei(HEVCSEI *s);
+
+int ff_hevc_set_sei_to_frame(AVCodecContext *logctx, HEVCSEI *sei, AVFrame *out, AVRational framerate, uint64_t seed, const VUI *vui, int bit_depth_luma, int bit_depth_chroma);
 
 #endif /* AVCODEC_HEVC_SEI_H */

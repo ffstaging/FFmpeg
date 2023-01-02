@@ -27,6 +27,7 @@
 #include "libavutil/opt.h"
 #include "libavutil/mastering_display_metadata.h"
 
+#include "atsc_a53.h"
 #include "avcodec.h"
 #include "cbs.h"
 #include "cbs_h265.h"
@@ -40,6 +41,7 @@
 enum {
     SEI_MASTERING_DISPLAY       = 0x08,
     SEI_CONTENT_LIGHT_LEVEL     = 0x10,
+    SEI_A53_CC                  = 0x20,
 };
 
 typedef struct VAAPIEncodeH265Picture {
@@ -84,6 +86,8 @@ typedef struct VAAPIEncodeH265Context {
 
     SEIRawMasteringDisplayColourVolume sei_mastering_display;
     SEIRawContentLightLevelInfo        sei_content_light_level;
+    SEIRawUserDataRegistered           sei_a53cc;
+    void                              *sei_a53cc_data;
 
     CodedBitstreamContext *cbc;
     CodedBitstreamFragment current_access_unit;
@@ -223,6 +227,13 @@ static int vaapi_encode_h265_write_extra_header(AVCodecContext *avctx,
             err = ff_cbs_sei_add_message(priv->cbc, au, 1,
                                          SEI_TYPE_CONTENT_LIGHT_LEVEL_INFO,
                                          &priv->sei_content_light_level, NULL);
+            if (err < 0)
+                goto fail;
+        }
+        if (priv->sei_needed & SEI_A53_CC) {
+            err = ff_cbs_sei_add_message(priv->cbc, au, 1,
+                                         SEI_TYPE_USER_DATA_REGISTERED_ITU_T_T35,
+                                         &priv->sei_a53cc, NULL);
             if (err < 0)
                 goto fail;
         }
@@ -759,7 +770,8 @@ static int vaapi_encode_h265_init_picture_params(AVCodecContext *avctx,
     VAAPIEncodePicture              *prev = pic->prev;
     VAAPIEncodeH265Picture         *hprev = prev ? prev->priv_data : NULL;
     VAEncPictureParameterBufferHEVC *vpic = pic->codec_picture_params;
-    int i;
+    int i, err;
+    size_t sei_a53cc_len;
 
     if (pic->type == PICTURE_TYPE_IDR) {
         av_assert0(pic->display_order == pic->encode_order);
@@ -886,6 +898,18 @@ static int vaapi_encode_h265_init_picture_params(AVCodecContext *avctx,
 
             priv->sei_needed |= SEI_CONTENT_LIGHT_LEVEL;
         }
+    }
+
+    av_freep(&priv->sei_a53cc_data);
+    err = ff_alloc_a53_sei(pic->input_image, 0, &priv->sei_a53cc_data, &sei_a53cc_len);
+    if (err < 0)
+        return err;
+    if (priv->sei_a53cc_data != NULL) {
+        priv->sei_a53cc.itu_t_t35_country_code = 181;
+        priv->sei_a53cc.data = (uint8_t *)priv->sei_a53cc_data + 1;
+        priv->sei_a53cc.data_length = sei_a53cc_len - 1;
+
+        priv->sei_needed |= SEI_A53_CC;
     }
 
     vpic->decoded_curr_pic = (VAPictureHEVC) {
@@ -1355,6 +1379,7 @@ static av_cold int vaapi_encode_h265_close(AVCodecContext *avctx)
 
     ff_cbs_fragment_free(&priv->current_access_unit);
     ff_cbs_close(&priv->cbc);
+    av_freep(&priv->sei_a53cc_data);
 
     return ff_vaapi_encode_close(avctx);
 }

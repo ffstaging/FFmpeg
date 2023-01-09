@@ -446,6 +446,11 @@ typedef struct AVPacketList {
  * be discarded by the decoder.  I.e. Non-reference frames.
  */
 #define AV_PKT_FLAG_DISPOSABLE 0x0010
+/**
+ * Flag is used to indicate packets in which the duration is absolute
+ * and should not be changed.
+ */
+#define AV_PKT_FLAG_FIXED_DURATION 0x0020
 
 enum AVSideDataParamChangeFlags {
 #if FF_API_OLD_CHANNEL_LAYOUT

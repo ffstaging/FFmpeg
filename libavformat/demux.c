@@ -914,7 +914,8 @@ static void update_initial_durations(AVFormatContext *s, AVStream *st,
             pktl->pkt.dts = cur_dts;
             if (!sti->avctx->has_b_frames)
                 pktl->pkt.pts = cur_dts;
-            pktl->pkt.duration = duration;
+            if ((pktl->pkt.flags & AV_PKT_FLAG_FIXED_DURATION) != AV_PKT_FLAG_FIXED_DURATION)
+                pktl->pkt.duration = duration;
         } else
             break;
         cur_dts = pktl->pkt.dts + pktl->pkt.duration;

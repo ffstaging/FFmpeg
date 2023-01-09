@@ -3673,6 +3673,10 @@ static int matroska_parse_frame(MatroskaDemuxContext *matroska,
     pkt->pos = pos;
     pkt->duration = lace_duration;
 
+    if (st->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE && 
+        st->codecpar->codec_id != AV_CODEC_ID_HDMV_PGS_SUBTITLE)
+        pkt->flags |= AV_PKT_FLAG_FIXED_DURATION;
+
     res = avpriv_packet_list_put(&matroska->queue, pkt, NULL, 0);
     if (res < 0) {
         av_packet_unref(pkt);

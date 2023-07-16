@@ -202,4 +202,11 @@ void ff_cbs_sei_delete_message_type(CodedBitstreamContext *ctx,
                                     CodedBitstreamFragment *au,
                                     uint32_t payload_type);
 
+/**
+ * Delete a message from the access unit.
+ */
+int ff_cbs_sei_delete_message(CodedBitstreamContext *ctx,
+                              CodedBitstreamFragment *au,
+                              SEIRawMessage *message);
+
 #endif /* AVCODEC_CBS_SEI_H */

@@ -24,6 +24,8 @@
 #include "cbs.h"
 #include "cbs_bsf.h"
 #include "cbs_h265.h"
+#include "cbs_misc.h"
+#include "cbs_sei.h"
 #include "h2645data.h"
 #include "hevc.h"
 #include "h265_profile_level.h"
@@ -62,6 +64,7 @@ typedef struct H265MetadataContext {
     int level;
     int level_guess;
     int level_warned;
+    int a53_cc;
 } H265MetadataContext;
 
 
@@ -322,6 +325,137 @@ static int h265_metadata_update_sps(AVBSFContext *bsf,
     return 0;
 }
 
+static int h265_metadata_extract_a53_cc(AVBSFContext *bsf, AVPacket *pkt,
+                                         CodedBitstreamFragment *au)
+{
+    H265MetadataContext *ctx = bsf->priv_data;
+    SEIRawMessage *message;
+    int err;
+
+    message = NULL;
+    while (ff_cbs_sei_find_message(ctx->common.output, au,
+                                   SEI_TYPE_USER_DATA_REGISTERED_ITU_T_T35,
+                                   &message) == 0) {
+        SEIRawUserDataRegistered *udr = message->payload;
+        A53UserData a53_ud;
+        uint8_t *a53_side_data = NULL;
+        size_t a53_side_data_size = 0;
+
+        if (udr->data_length < 2) {
+            // Too short to contain a provider code.
+            continue;
+        }
+
+        if (AV_RB16(udr->data) != 0x31) { // provider_code as atsc_provider_code
+            // Not ATSC.
+            continue;
+        }
+
+        // The first two bytes of the message is provider_code
+        err = ff_cbs_read_a53_user_data(ctx->common.output,
+                                        &a53_ud,
+                                        udr->data + 2,
+                                        udr->data_length - 2);
+        if (err < 0) {
+            // Invalid or something completely different.
+            continue;
+        }
+        if (a53_ud.user_identifier != A53_USER_IDENTIFIER_ATSC ||
+            a53_ud.atsc.user_data_type_code !=
+                A53_USER_DATA_TYPE_CODE_CC_DATA) {
+            // Valid but something else (e.g. AFD).
+            continue;
+        }
+
+        err = ff_cbs_write_a53_cc_side_data(ctx->common.output,
+                                            &a53_side_data,
+                                            &a53_side_data_size,
+                                            &a53_ud);
+        if (err < 0) {
+            av_log(bsf, AV_LOG_ERROR, "Failed to write "
+                    "A/53 user data for packet side data.\n");
+            return err;
+        }
+
+        if (a53_side_data) {
+            err = av_packet_add_side_data(pkt, AV_PKT_DATA_A53_CC,
+                                          a53_side_data, a53_side_data_size);
+            if (err) {
+                av_log(bsf, AV_LOG_ERROR, "Failed to attach extracted A/53 "
+                        "side data to packet.\n");
+                av_freep(&a53_side_data);
+                return err;
+            }
+
+            if (ctx->a53_cc == BSF_ELEMENT_REMOVE ||
+                ctx->a53_cc == BSF_ELEMENT_INSERT) {
+                ff_cbs_sei_delete_message(ctx->common.output, au, message);
+
+                // Reset iteration
+                message = NULL;
+            }
+        }
+    }
+
+    if (ctx->a53_cc == BSF_ELEMENT_INSERT) {
+        uint8_t *data;
+        size_t size;
+        int offset = 0;
+
+        data = av_packet_get_side_data(pkt, AV_PKT_DATA_A53_CC, &size);
+        while (size > 0) {
+            A53UserData a53_ud;
+            int rsize = FFMIN(93, size);
+
+            err = ff_cbs_read_a53_cc_side_data(ctx->common.output, &a53_ud,
+                                               data + offset, rsize);
+            offset += rsize;
+            size -= rsize;
+            if (err < 0) {
+                av_log(bsf, AV_LOG_WARNING, "Invalid A/53 closed captions "
+                       "in packet side data dropped.\n");
+            } else {
+                AVBufferRef *udr_buf = av_buffer_allocz(sizeof(SEIRawUserDataRegistered));
+                SEIRawUserDataRegistered *udr = (SEIRawUserDataRegistered*)udr_buf->data;
+                size_t size = 9 + 3 * a53_ud.atsc.cc_data.cc_count;
+
+                udr->data_ref = av_buffer_allocz(2 + size);
+                if (!udr->data_ref) {
+                    return AVERROR(ENOMEM);
+                }
+                udr->data = udr->data_ref->data;
+                udr->data_length = udr->data_ref->size;
+
+                udr->itu_t_t35_country_code = 0xB5; // usa_country_code
+                AV_WB16(udr->data, 0x31);           // provider_code as atsc_provider_code
+
+                err = ff_cbs_write_a53_user_data(ctx->common.output, udr->data + 2,
+                                                 &size, &a53_ud);
+                if (err < 0) {
+                    av_log(bsf, AV_LOG_ERROR, "Failed to write "
+                           "A/53 user data.\n");
+                    av_buffer_unref(&udr->data_ref);
+                    av_buffer_unref(&udr_buf);
+                    return err;
+                }
+
+                err = ff_cbs_sei_add_message(ctx->common.output, au, 1,
+                                             SEI_TYPE_USER_DATA_REGISTERED_ITU_T_T35,
+                                             udr, udr_buf);
+                if (err < 0) {
+                    av_log(bsf, AV_LOG_ERROR, "Failed to add A/53 user data "
+                           "SEI message to access unit.\n");
+                    av_buffer_unref(&udr->data_ref);
+                    av_buffer_unref(&udr_buf);
+                    return err;
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
 static int h265_metadata_update_fragment(AVBSFContext *bsf, AVPacket *pkt,
                                          CodedBitstreamFragment *au)
 {
@@ -385,6 +519,12 @@ static int h265_metadata_update_fragment(AVBSFContext *bsf, AVPacket *pkt,
             if (err < 0)
                 return err;
         }
+    }
+
+    if (pkt && ctx->a53_cc != BSF_ELEMENT_PASS) {
+        err = h265_metadata_extract_a53_cc(bsf, pkt, au);
+        if (err < 0)
+            return err;
     }
 
     return 0;
@@ -477,6 +617,10 @@ static const AVOption h265_metadata_options[] = {
     { LEVEL("6.2", 186) },
     { LEVEL("8.5", 255) },
 #undef LEVEL
+
+    BSF_ELEMENT_OPTIONS_PIRE("a53_cc",
+                             "A/53 Closed Captions in SEI NAL units",
+                             a53_cc, FLAGS),
 
     { NULL }
 };

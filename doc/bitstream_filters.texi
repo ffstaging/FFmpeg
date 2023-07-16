@@ -243,6 +243,17 @@ ffmpeg -i hapqa_inputfile.mov -c copy -bsf:v hapqa_extract=texture=alpha -tag:v 
 Modify metadata embedded in an H.264 stream.
 
 @table @option
+@item a53_cc
+Insert or remove registered userdata SEI NAL units containing A/53 closed captions.
+
+@table @samp
+@item pass
+@item insert
+@item remove
+@end table
+
+Default is pass.
+
 @item aud
 Insert or remove AUD NAL units in all access units of the stream.
 
@@ -387,6 +398,17 @@ confuse other transformations which require correct extradata.
 Modify metadata embedded in an HEVC stream.
 
 @table @option
+@item a53_cc
+Insert or remove registered userdata SEI NAL units containing A/53 closed captions.
+
+@table @samp
+@item pass
+@item insert
+@item remove
+@end table
+
+Default is pass.
+
 @item aud
 Insert or remove AUD NAL units in all access units of the stream.
 
@@ -537,6 +559,17 @@ Decompress non-standard compressed MP3 audio headers.
 Modify metadata embedded in an MPEG-2 stream.
 
 @table @option
+@item a53_cc
+Insert or remove user data containing A/53 closed captions.
+
+@table @samp
+@item pass
+@item insert
+@item remove
+@end table
+
+Default is pass.
+
 @item display_aspect_ratio
 Set the display aspect ratio in the stream.
 

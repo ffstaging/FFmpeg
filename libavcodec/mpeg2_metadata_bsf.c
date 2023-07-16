@@ -23,6 +23,7 @@
 #include "bsf_internal.h"
 #include "cbs.h"
 #include "cbs_bsf.h"
+#include "cbs_misc.h"
 #include "cbs_mpeg2.h"
 #include "mpeg12.h"
 
@@ -39,9 +40,78 @@ typedef struct MPEG2MetadataContext {
     int colour_primaries;
     int transfer_characteristics;
     int matrix_coefficients;
+    int a53_cc;
 
     int mpeg1_warned;
 } MPEG2MetadataContext;
+
+static int mpeg2_metadata_handle_a53_cc(AVBSFContext *bsf,
+                                          AVPacket *pkt,
+                                          CodedBitstreamFragment *frag)
+{
+    MPEG2MetadataContext *ctx = bsf->priv_data;
+    int err, i;
+    uint8_t *a53_side_data = NULL;
+    size_t a53_side_data_size = 0;
+
+    if (ctx->a53_cc == BSF_ELEMENT_REMOVE || ctx->a53_cc == BSF_ELEMENT_EXTRACT) {
+        for (i = 0; i < frag->nb_units; i++) {
+            MPEG2RawUserData *ud;
+            A53UserData a53_ud;
+
+            if (frag->units[i].type != MPEG2_START_USER_DATA)
+                continue;
+            ud = frag->units[i].content;
+
+            err = ff_cbs_read_a53_user_data(ctx->common.output, &a53_ud, ud->user_data,
+                                            ud->user_data_length);
+            if (err < 0) {
+                // Invalid or something completely different.
+                continue;
+            }
+            if (a53_ud.user_identifier != A53_USER_IDENTIFIER_ATSC ||
+                a53_ud.atsc.user_data_type_code !=
+                    A53_USER_DATA_TYPE_CODE_CC_DATA) {
+                // Valid but something else (e.g. AFD).
+                continue;
+            }
+
+            if (ctx->a53_cc == BSF_ELEMENT_REMOVE) {
+                ff_cbs_delete_unit(frag, i);
+                --i;
+                break;
+            } else if(ctx->a53_cc == BSF_ELEMENT_EXTRACT) {
+                err = ff_cbs_write_a53_cc_side_data(ctx->common.output,
+                                                    &a53_side_data,
+                                                    &a53_side_data_size,
+                                                    &a53_ud);
+                if (err < 0) {
+                    av_log(bsf, AV_LOG_ERROR, "Failed to write "
+                           "A/53 user data for packet side data.\n");
+                    goto fail;
+                }
+
+                if (a53_side_data) {
+                    err = av_packet_add_side_data(pkt, AV_PKT_DATA_A53_CC,
+                                                  a53_side_data, a53_side_data_size);
+                    if (err) {
+                        av_log(bsf, AV_LOG_ERROR, "Failed to attach extracted A/53 "
+                               "side data to packet.\n");
+                        goto fail;
+                    }
+                    a53_side_data = NULL;
+                }
+            }
+        }
+    }
+
+    err = 0;
+
+fail:
+    av_freep(&a53_side_data);
+
+    return err;
+}
 
 
 static int mpeg2_metadata_update_fragment(AVBSFContext *bsf,
@@ -53,6 +123,13 @@ static int mpeg2_metadata_update_fragment(AVBSFContext *bsf,
     MPEG2RawSequenceExtension         *se = NULL;
     MPEG2RawSequenceDisplayExtension *sde = NULL;
     int i, se_pos;
+
+    if (pkt && ctx->a53_cc != BSF_ELEMENT_PASS) {
+        int err;
+        err = mpeg2_metadata_handle_a53_cc(bsf, pkt, frag);
+        if (err < 0)
+            return err;
+    }
 
     for (i = 0; i < frag->nb_units; i++) {
         if (frag->units[i].type == MPEG2_START_SEQUENCE_HEADER) {
@@ -218,6 +295,9 @@ static const AVOption mpeg2_metadata_options[] = {
         OFFSET(matrix_coefficients), AV_OPT_TYPE_INT,
         { .i64 = -1 }, -1, 255, FLAGS },
 
+    BSF_ELEMENT_OPTIONS_PIRE("a53_cc",
+                             "A/53 Closed Captions in user data",
+                             a53_cc, FLAGS),
     { NULL }
 };
 

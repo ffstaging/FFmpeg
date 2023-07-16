@@ -376,6 +376,31 @@ static void cbs_sei_delete_message(SEIRawMessageList *list,
     }
 }
 
+int ff_cbs_sei_delete_message(CodedBitstreamContext *ctx,
+                               CodedBitstreamFragment *au,
+                               SEIRawMessage *message)
+{
+    int err, i, j;
+
+    for (i = 0; i < au->nb_units; i++) {
+        CodedBitstreamUnit *unit = &au->units[i];
+        SEIRawMessageList *list;
+
+        err = cbs_sei_get_message_list(ctx, unit, &list);
+        if (err < 0)
+            continue;
+
+        for (j = 0; j < list->nb_messages; j++) {
+            if (message == &list->messages[j]) {
+                cbs_sei_delete_message(list, j);
+                return 0;
+            }
+        }
+    }
+
+    return AVERROR(ENOENT);
+}
+
 void ff_cbs_sei_delete_message_type(CodedBitstreamContext *ctx,
                                     CodedBitstreamFragment *au,
                                     uint32_t payload_type)

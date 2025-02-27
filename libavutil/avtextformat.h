@@ -42,6 +42,7 @@ struct AVTextFormatSection {
 #define SECTION_FLAG_HAS_VARIABLE_FIELDS 4 ///< the section may contain a variable number of fields with variable keys.
                                            ///  For these sections the element_name field is mandatory.
 #define SECTION_FLAG_HAS_TYPE        8 ///< the section contains a type to distinguish multiple nested elements
+#define SECTION_FLAG_NUMBERING_BY_TYPE 16 ///< the items in this array section should be numbered individually by type
 
     int flags;
     const int children_ids[SECTION_MAX_NB_CHILDREN+1]; ///< list of children section IDS, terminated by -1
@@ -54,8 +55,8 @@ struct AVTextFormatSection {
 
 typedef struct AVTextFormatContext AVTextFormatContext;
 
-#define WRITER_FLAG_DISPLAY_OPTIONAL_FIELDS 1
-#define WRITER_FLAG_PUT_PACKETS_AND_FRAMES_IN_SAME_CHAPTER 2
+#define AV_TEXTFORMAT_FLAG_SUPPORTS_OPTIONAL_FIELDS 1
+#define AV_TEXTFORMAT_FLAG_SUPPORTS_MIXED_ARRAY_CONTENT 2
 
 typedef enum {
     WRITER_STRING_VALIDATION_FAIL,
@@ -80,7 +81,8 @@ typedef struct AVTextFormatter {
     int flags;                  ///< a combination or WRITER_FLAG_*
 } AVTextFormatter;
 
-#define SECTION_MAX_NB_LEVELS 12
+#define SECTION_MAX_NB_LEVELS    12
+#define SECTION_MAX_NB_SECTIONS 100
 
 struct AVTextFormatContext {
     const AVClass *class;           ///< class of the writer
@@ -101,15 +103,12 @@ struct AVTextFormatContext {
 
     /** number of the item printed in the given section, starting from 0 */
     unsigned int nb_item[SECTION_MAX_NB_LEVELS];
+    unsigned int nb_item_type[SECTION_MAX_NB_LEVELS][SECTION_MAX_NB_SECTIONS];
 
     /** section per each level */
     const struct AVTextFormatSection *section[SECTION_MAX_NB_LEVELS];
     AVBPrint section_pbuf[SECTION_MAX_NB_LEVELS]; ///< generic print buffer dedicated to each section,
                                                   ///  used by various writers
-
-    unsigned int nb_section_packet; ///< number of the packet section in case we are in "packets_and_frames" section
-    unsigned int nb_section_frame;  ///< number of the frame  section in case we are in "packets_and_frames" section
-    unsigned int nb_section_packet_frame; ///< nb_section_packet or nb_section_frame according if is_packets_and_frames
 
     int show_optional_fields;
     int show_value_unit;

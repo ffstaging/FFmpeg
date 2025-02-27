@@ -272,7 +272,7 @@ static struct AVTextFormatSection sections[] = {
     [SECTION_ID_LIBRARY_VERSIONS] =   { SECTION_ID_LIBRARY_VERSIONS, "library_versions", SECTION_FLAG_IS_ARRAY, { SECTION_ID_LIBRARY_VERSION, -1 } },
     [SECTION_ID_LIBRARY_VERSION] =    { SECTION_ID_LIBRARY_VERSION, "library_version", 0, { -1 } },
     [SECTION_ID_PACKETS] =            { SECTION_ID_PACKETS, "packets", SECTION_FLAG_IS_ARRAY, { SECTION_ID_PACKET, -1} },
-    [SECTION_ID_PACKETS_AND_FRAMES] = { SECTION_ID_PACKETS_AND_FRAMES, "packets_and_frames", SECTION_FLAG_IS_ARRAY, { SECTION_ID_PACKET, -1} },
+    [SECTION_ID_PACKETS_AND_FRAMES] = { SECTION_ID_PACKETS_AND_FRAMES, "packets_and_frames", SECTION_FLAG_IS_ARRAY | SECTION_FLAG_NUMBERING_BY_TYPE, { SECTION_ID_PACKET, -1} },
     [SECTION_ID_PACKET] =             { SECTION_ID_PACKET, "packet", 0, { SECTION_ID_PACKET_TAGS, SECTION_ID_PACKET_SIDE_DATA_LIST, -1 } },
     [SECTION_ID_PACKET_TAGS] =        { SECTION_ID_PACKET_TAGS, "tags", SECTION_FLAG_HAS_VARIABLE_FIELDS, { -1 }, .element_name = "tag", .unique_name = "packet_tags" },
     [SECTION_ID_PACKET_SIDE_DATA_LIST] ={ SECTION_ID_PACKET_SIDE_DATA_LIST, "side_data_list", SECTION_FLAG_IS_ARRAY, { SECTION_ID_PACKET_SIDE_DATA, -1 }, .element_name = "side_data", .unique_name = "packet_side_data_list" },
@@ -547,7 +547,7 @@ static const AVTextFormatter default_formatter = {
     .print_section_footer  = default_print_section_footer,
     .print_integer         = default_print_int,
     .print_string          = default_print_str,
-    .flags = WRITER_FLAG_DISPLAY_OPTIONAL_FIELDS,
+    .flags = AV_TEXTFORMAT_FLAG_SUPPORTS_OPTIONAL_FIELDS,
     .priv_class            = &default_class,
 };
 
@@ -747,7 +747,7 @@ static const AVTextFormatter compact_formatter = {
     .print_section_footer = compact_print_section_footer,
     .print_integer        = compact_print_int,
     .print_string         = compact_print_str,
-    .flags = WRITER_FLAG_DISPLAY_OPTIONAL_FIELDS,
+    .flags = AV_TEXTFORMAT_FLAG_SUPPORTS_OPTIONAL_FIELDS,
     .priv_class           = &compact_class,
 };
 
@@ -778,7 +778,7 @@ static const AVTextFormatter csv_formatter = {
     .print_section_footer = compact_print_section_footer,
     .print_integer        = compact_print_int,
     .print_string         = compact_print_str,
-    .flags = WRITER_FLAG_DISPLAY_OPTIONAL_FIELDS,
+    .flags = AV_TEXTFORMAT_FLAG_SUPPORTS_OPTIONAL_FIELDS,
     .priv_class           = &csv_class,
 };
 
@@ -870,8 +870,9 @@ static void flat_print_section_header(AVTextFormatContext *wctx, const void *dat
         av_bprintf(buf, "%s%s", wctx->section[wctx->level]->name, flat->sep_str);
 
         if (parent_section->flags & SECTION_FLAG_IS_ARRAY) {
-            int n = parent_section->id == SECTION_ID_PACKETS_AND_FRAMES ?
-                wctx->nb_section_packet_frame : wctx->nb_item[wctx->level-1];
+            int n = parent_section->flags & SECTION_FLAG_NUMBERING_BY_TYPE ?
+                wctx->nb_item_type[wctx->level-1][section->id] :
+                wctx->nb_item[wctx->level-1];
             av_bprintf(buf, "%d%s", n, flat->sep_str);
         }
     }
@@ -902,7 +903,7 @@ static const AVTextFormatter flat_formatter = {
     .print_section_header  = flat_print_section_header,
     .print_integer         = flat_print_int,
     .print_string          = flat_print_str,
-    .flags = WRITER_FLAG_DISPLAY_OPTIONAL_FIELDS|WRITER_FLAG_PUT_PACKETS_AND_FRAMES_IN_SAME_CHAPTER,
+    .flags = AV_TEXTFORMAT_FLAG_SUPPORTS_OPTIONAL_FIELDS|AV_TEXTFORMAT_FLAG_SUPPORTS_MIXED_ARRAY_CONTENT,
     .priv_class            = &flat_class,
 };
 
@@ -974,8 +975,9 @@ static void ini_print_section_header(AVTextFormatContext *wctx, const void *data
         av_bprintf(buf, "%s%s", buf->str[0] ? "." : "", wctx->section[wctx->level]->name);
 
         if (parent_section->flags & SECTION_FLAG_IS_ARRAY) {
-            int n = parent_section->id == SECTION_ID_PACKETS_AND_FRAMES ?
-                wctx->nb_section_packet_frame : wctx->nb_item[wctx->level-1];
+            int n = parent_section->flags & SECTION_FLAG_NUMBERING_BY_TYPE ?
+                wctx->nb_item_type[wctx->level-1][section->id] :
+                wctx->nb_item[wctx->level-1];
             av_bprintf(buf, ".%d", n);
         }
     }
@@ -1006,7 +1008,7 @@ static const AVTextFormatter ini_formatter = {
     .print_section_header  = ini_print_section_header,
     .print_integer         = ini_print_int,
     .print_string          = ini_print_str,
-    .flags = WRITER_FLAG_DISPLAY_OPTIONAL_FIELDS|WRITER_FLAG_PUT_PACKETS_AND_FRAMES_IN_SAME_CHAPTER,
+    .flags = AV_TEXTFORMAT_FLAG_SUPPORTS_OPTIONAL_FIELDS|AV_TEXTFORMAT_FLAG_SUPPORTS_MIXED_ARRAY_CONTENT,
     .priv_class            = &ini_class,
 };
 
@@ -1090,7 +1092,7 @@ static void json_print_section_header(AVTextFormatContext *wctx, const void *dat
             writer_printf(wctx, "{%s", json->item_start_end);
 
             /* this is required so the parser can distinguish between packets and frames */
-            if (parent_section && parent_section->id == SECTION_ID_PACKETS_AND_FRAMES) {
+            if (parent_section && parent_section->flags & SECTION_FLAG_NUMBERING_BY_TYPE) {
                 if (!json->compact)
                     JSON_INDENT();
                 writer_printf(wctx, "\"type\": \"%s\"", section->name);
@@ -1141,7 +1143,7 @@ static void json_print_str(AVTextFormatContext *wctx, const char *key, const cha
     const struct AVTextFormatSection *parent_section = wctx->level ?
         wctx->section[wctx->level-1] : NULL;
 
-    if (wctx->nb_item[wctx->level] || (parent_section && parent_section->id == SECTION_ID_PACKETS_AND_FRAMES))
+    if (wctx->nb_item[wctx->level] || (parent_section && parent_section->flags & SECTION_FLAG_NUMBERING_BY_TYPE))
         writer_put_str(wctx, json->item_sep);
     if (!json->compact)
         JSON_INDENT();
@@ -1155,7 +1157,7 @@ static void json_print_int(AVTextFormatContext *wctx, const char *key, int64_t v
         wctx->section[wctx->level-1] : NULL;
     AVBPrint buf;
 
-    if (wctx->nb_item[wctx->level] || (parent_section && parent_section->id == SECTION_ID_PACKETS_AND_FRAMES))
+    if (wctx->nb_item[wctx->level] || (parent_section && parent_section->flags & SECTION_FLAG_NUMBERING_BY_TYPE))
         writer_put_str(wctx, json->item_sep);
     if (!json->compact)
         JSON_INDENT();
@@ -1173,7 +1175,7 @@ static const AVTextFormatter json_formatter = {
     .print_section_footer = json_print_section_footer,
     .print_integer        = json_print_int,
     .print_string         = json_print_str,
-    .flags = WRITER_FLAG_PUT_PACKETS_AND_FRAMES_IN_SAME_CHAPTER,
+    .flags = AV_TEXTFORMAT_FLAG_SUPPORTS_MIXED_ARRAY_CONTENT,
     .priv_class           = &json_class,
 };
 
@@ -1345,7 +1347,7 @@ static AVTextFormatter xml_formatter = {
     .print_section_footer = xml_print_section_footer,
     .print_integer        = xml_print_int,
     .print_string         = xml_print_str,
-    .flags = WRITER_FLAG_PUT_PACKETS_AND_FRAMES_IN_SAME_CHAPTER,
+    .flags = AV_TEXTFORMAT_FLAG_SUPPORTS_MIXED_ARRAY_CONTENT,
     .priv_class           = &xml_class,
 };
 
@@ -3421,7 +3423,7 @@ static int probe_file(AVTextFormatContext *wctx, const char *filename,
 
     if (do_read_frames || do_read_packets) {
         if (do_show_frames && do_show_packets &&
-            wctx->writer->flags & WRITER_FLAG_PUT_PACKETS_AND_FRAMES_IN_SAME_CHAPTER)
+            wctx->writer->flags & AV_TEXTFORMAT_FLAG_SUPPORTS_MIXED_ARRAY_CONTENT)
             section_id = SECTION_ID_PACKETS_AND_FRAMES;
         else if (do_show_packets && !do_show_frames)
             section_id = SECTION_ID_PACKETS;

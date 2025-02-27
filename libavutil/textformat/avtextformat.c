@@ -189,6 +189,11 @@ int avtext_context_open(AVTextFormatContext **pwctx, const AVTextFormatter *writ
     wctx->use_byte_value_binary_prefix = use_byte_value_binary_prefix;
     wctx->use_value_sexagesimal_format = use_value_sexagesimal_format;
     wctx->show_optional_fields = show_optional_fields;
+    
+    if (nb_sections > SECTION_MAX_NB_SECTIONS) {
+        av_log(wctx, AV_LOG_ERROR, "The number of section definitions (%d) is larger than the maximum allowed (%d)\n", nb_sections, SECTION_MAX_NB_SECTIONS);
+        goto fail;
+    }
 
     wctx->class = &textcontext_class;
     wctx->writer = writer;
@@ -293,8 +298,6 @@ fail:
 }
 
 /* Temporary definitions during refactoring */
-#define SECTION_ID_PACKETS_AND_FRAMES     24
-#define SECTION_ID_PACKET                 21
 static const char unit_second_str[]         = "s"    ;
 static const char unit_hertz_str[]          = "Hz"   ;
 static const char unit_byte_str[]           = "byte" ;
@@ -305,22 +308,12 @@ void avtext_print_section_header(AVTextFormatContext *wctx,
                                                const void *data,
                                                int section_id)
 {
-    int parent_section_id;
     wctx->level++;
     av_assert0(wctx->level < SECTION_MAX_NB_LEVELS);
-    parent_section_id = wctx->level ?
-        (wctx->section[wctx->level-1])->id : SECTION_ID_NONE;
 
     wctx->nb_item[wctx->level] = 0;
+    memset(wctx->nb_item_type[wctx->level], 0, sizeof(wctx->nb_item_type[wctx->level]));
     wctx->section[wctx->level] = &wctx->sections[section_id];
-
-    if (section_id == SECTION_ID_PACKETS_AND_FRAMES) {
-        wctx->nb_section_packet = wctx->nb_section_frame =
-        wctx->nb_section_packet_frame = 0;
-    } else if (parent_section_id == SECTION_ID_PACKETS_AND_FRAMES) {
-        wctx->nb_section_packet_frame = section_id == SECTION_ID_PACKET ?
-            wctx->nb_section_packet : wctx->nb_section_frame;
-    }
 
     if (wctx->writer->print_section_header)
         wctx->writer->print_section_header(wctx, data);
@@ -332,12 +325,11 @@ void avtext_print_section_footer(AVTextFormatContext *wctx)
     int parent_section_id = wctx->level ?
         wctx->section[wctx->level-1]->id : SECTION_ID_NONE;
 
-    if (parent_section_id != SECTION_ID_NONE)
-        wctx->nb_item[wctx->level-1]++;
-    if (parent_section_id == SECTION_ID_PACKETS_AND_FRAMES) {
-        if (section_id == SECTION_ID_PACKET) wctx->nb_section_packet++;
-        else                                     wctx->nb_section_frame++;
+    if (parent_section_id != SECTION_ID_NONE) {
+        wctx->nb_item[wctx->level - 1]++;
+        wctx->nb_item_type[wctx->level - 1][section_id]++;
     }
+
     if (wctx->writer->print_section_footer)
         wctx->writer->print_section_footer(wctx);
     wctx->level--;
@@ -486,7 +478,7 @@ int avtext_print_string(AVTextFormatContext *wctx, const char *key, const char *
     if (wctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_NEVER ||
         (wctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_AUTO
         && (flags & PRINT_STRING_OPT)
-        && !(wctx->writer->flags & WRITER_FLAG_DISPLAY_OPTIONAL_FIELDS)))
+        && !(wctx->writer->flags & AV_TEXTFORMAT_FLAG_SUPPORTS_OPTIONAL_FIELDS)))
         return 0;
 
     if (section->show_all_entries || av_dict_get(section->entries_to_show, key, NULL, 0)) {

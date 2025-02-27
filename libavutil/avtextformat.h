@@ -37,12 +37,12 @@ struct AVTextFormatSection {
     int id;             ///< unique id identifying a section
     const char *name;
 
-#define SECTION_FLAG_IS_WRAPPER      1 ///< the section only contains other sections, but has no data at its own level
-#define SECTION_FLAG_IS_ARRAY        2 ///< the section contains an array of elements of the same type
-#define SECTION_FLAG_HAS_VARIABLE_FIELDS 4 ///< the section may contain a variable number of fields with variable keys.
+#define AV_TEXTFORMAT_SECTION_FLAG_IS_WRAPPER      1 ///< the section only contains other sections, but has no data at its own level
+#define AV_TEXTFORMAT_SECTION_FLAG_IS_ARRAY        2 ///< the section contains an array of elements of the same type
+#define AV_TEXTFORMAT_SECTION_FLAG_HAS_VARIABLE_FIELDS 4 ///< the section may contain a variable number of fields with variable keys.
                                            ///  For these sections the element_name field is mandatory.
-#define SECTION_FLAG_HAS_TYPE        8 ///< the section contains a type to distinguish multiple nested elements
-#define SECTION_FLAG_NUMBERING_BY_TYPE 16 ///< the items in this array section should be numbered individually by type
+#define AV_TEXTFORMAT_SECTION_FLAG_HAS_TYPE        8 ///< the section contains a type to distinguish multiple nested elements
+#define AV_TEXTFORMAT_SECTION_FLAG_NUMBERING_BY_TYPE 16 ///< the items in this array section should be numbered individually by type
 
     int flags;
     const int children_ids[SECTION_MAX_NB_CHILDREN+1]; ///< list of children section IDS, terminated by -1
@@ -59,10 +59,10 @@ typedef struct AVTextFormatContext AVTextFormatContext;
 #define AV_TEXTFORMAT_FLAG_SUPPORTS_MIXED_ARRAY_CONTENT 2
 
 typedef enum {
-    WRITER_STRING_VALIDATION_FAIL,
-    WRITER_STRING_VALIDATION_REPLACE,
-    WRITER_STRING_VALIDATION_IGNORE,
-    WRITER_STRING_VALIDATION_NB
+    AV_TEXTFORMAT_STRING_VALIDATION_FAIL,
+    AV_TEXTFORMAT_STRING_VALIDATION_REPLACE,
+    AV_TEXTFORMAT_STRING_VALIDATION_IGNORE,
+    AV_TEXTFORMAT_STRING_VALIDATION_NB
 } StringValidation;
 
 typedef struct AVTextFormatter {
@@ -78,7 +78,7 @@ typedef struct AVTextFormatter {
     void (*print_integer)       (AVTextFormatContext *wctx, const char *, int64_t);
     void (*print_rational)      (AVTextFormatContext *wctx, AVRational *q, char *sep);
     void (*print_string)        (AVTextFormatContext *wctx, const char *, const char *);
-    int flags;                  ///< a combination or WRITER_FLAG_*
+    int flags;                  ///< a combination or AV_TEXTFORMAT__FLAG_*
 } AVTextFormatter;
 
 #define SECTION_MAX_NB_LEVELS    12
@@ -127,8 +127,8 @@ struct AVTextFormatContext {
 #define SHOW_OPTIONAL_FIELDS_NEVER       0
 #define SHOW_OPTIONAL_FIELDS_ALWAYS      1
 
-#define PRINT_STRING_OPT      1
-#define PRINT_STRING_VALIDATE 2
+#define AV_TEXTFORMAT_PRINT_STRING_OPTIONAL 1
+#define AV_TEXTFORMAT_PRINT_STRING_VALIDATE 2
 
 int avtext_context_open(AVTextFormatContext **pwctx, const AVTextFormatter *writer, const char *args,
                         const struct AVTextFormatSection *sections, int nb_sections,

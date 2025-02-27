@@ -60,12 +60,12 @@ static const char *avtext_context_get_writer_name(void *p)
 
 static const AVOption textcontext_options[] = {
     { "string_validation", "set string validation mode",
-      OFFSET(string_validation), AV_OPT_TYPE_INT, {.i64=WRITER_STRING_VALIDATION_REPLACE}, 0, WRITER_STRING_VALIDATION_NB-1, .unit = "sv" },
+      OFFSET(string_validation), AV_OPT_TYPE_INT, {.i64=AV_TEXTFORMAT_STRING_VALIDATION_REPLACE}, 0, AV_TEXTFORMAT_STRING_VALIDATION_NB-1, .unit = "sv" },
     { "sv", "set string validation mode",
-      OFFSET(string_validation), AV_OPT_TYPE_INT, {.i64=WRITER_STRING_VALIDATION_REPLACE}, 0, WRITER_STRING_VALIDATION_NB-1, .unit = "sv" },
-        { "ignore",  NULL, 0, AV_OPT_TYPE_CONST, {.i64 = WRITER_STRING_VALIDATION_IGNORE},  .unit = "sv" },
-        { "replace", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = WRITER_STRING_VALIDATION_REPLACE}, .unit = "sv" },
-        { "fail",    NULL, 0, AV_OPT_TYPE_CONST, {.i64 = WRITER_STRING_VALIDATION_FAIL},    .unit = "sv" },
+      OFFSET(string_validation), AV_OPT_TYPE_INT, {.i64=AV_TEXTFORMAT_STRING_VALIDATION_REPLACE}, 0, AV_TEXTFORMAT_STRING_VALIDATION_NB-1, .unit = "sv" },
+        { "ignore",  NULL, 0, AV_OPT_TYPE_CONST, {.i64 = AV_TEXTFORMAT_STRING_VALIDATION_IGNORE},  .unit = "sv" },
+        { "replace", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = AV_TEXTFORMAT_STRING_VALIDATION_REPLACE}, .unit = "sv" },
+        { "fail",    NULL, 0, AV_OPT_TYPE_CONST, {.i64 = AV_TEXTFORMAT_STRING_VALIDATION_FAIL},    .unit = "sv" },
     { "string_validation_replacement", "set string validation replacement string", OFFSET(string_validation_replacement), AV_OPT_TYPE_STRING, {.str=""}},
     { "svr", "set string validation replacement string", OFFSET(string_validation_replacement), AV_OPT_TYPE_STRING, {.str="\xEF\xBF\xBD"}},
 };
@@ -373,24 +373,24 @@ static inline int validate_string(AVTextFormatContext *wctx, char **dstp, const 
             invalid_chars_nb++;
 
             switch (wctx->string_validation) {
-            case WRITER_STRING_VALIDATION_FAIL:
+            case AV_TEXTFORMAT_STRING_VALIDATION_FAIL:
                 av_log(wctx, AV_LOG_ERROR,
                        "Invalid UTF-8 sequence found in string '%s'\n", src);
                 ret = AVERROR_INVALIDDATA;
                 goto end;
                 break;
 
-            case WRITER_STRING_VALIDATION_REPLACE:
+            case AV_TEXTFORMAT_STRING_VALIDATION_REPLACE:
                 av_bprintf(&dstbuf, "%s", wctx->string_validation_replacement);
                 break;
             }
         }
 
-        if (!invalid || wctx->string_validation == WRITER_STRING_VALIDATION_IGNORE)
+        if (!invalid || wctx->string_validation == AV_TEXTFORMAT_STRING_VALIDATION_IGNORE)
             av_bprint_append_data(&dstbuf, p0, p-p0);
     }
 
-    if (invalid_chars_nb && wctx->string_validation == WRITER_STRING_VALIDATION_REPLACE) {
+    if (invalid_chars_nb && wctx->string_validation == AV_TEXTFORMAT_STRING_VALIDATION_REPLACE) {
         av_log(wctx, AV_LOG_WARNING,
                "%d invalid UTF-8 sequence(s) found in string '%s', replaced with '%s'\n",
                invalid_chars_nb, src, wctx->string_validation_replacement);
@@ -477,12 +477,12 @@ int avtext_print_string(AVTextFormatContext *wctx, const char *key, const char *
 
     if (wctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_NEVER ||
         (wctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_AUTO
-        && (flags & PRINT_STRING_OPT)
+        && (flags & AV_TEXTFORMAT_PRINT_STRING_OPTIONAL)
         && !(wctx->writer->flags & AV_TEXTFORMAT_FLAG_SUPPORTS_OPTIONAL_FIELDS)))
         return 0;
 
     if (section->show_all_entries || av_dict_get(section->entries_to_show, key, NULL, 0)) {
-        if (flags & PRINT_STRING_VALIDATE) {
+        if (flags & AV_TEXTFORMAT_PRINT_STRING_VALIDATE) {
             char *key1 = NULL, *val1 = NULL;
             ret = validate_string(wctx, &key1, key);
             if (ret < 0) goto end;
@@ -522,7 +522,7 @@ void avtext_print_time(AVTextFormatContext *wctx, const char *key,
     char buf[128];
 
     if ((!is_duration && ts == AV_NOPTS_VALUE) || (is_duration && ts == 0)) {
-        avtext_print_string(wctx, key, "N/A", PRINT_STRING_OPT);
+        avtext_print_string(wctx, key, "N/A", AV_TEXTFORMAT_PRINT_STRING_OPTIONAL);
     } else {
         double d = ts * av_q2d(*time_base);
         struct unit_value uv;
@@ -536,7 +536,7 @@ void avtext_print_time(AVTextFormatContext *wctx, const char *key,
 void avtext_print_ts(AVTextFormatContext *wctx, const char *key, int64_t ts, int is_duration)
 {
     if ((!is_duration && ts == AV_NOPTS_VALUE) || (is_duration && ts == 0)) {
-        avtext_print_string(wctx, key, "N/A", PRINT_STRING_OPT);
+        avtext_print_string(wctx, key, "N/A", AV_TEXTFORMAT_PRINT_STRING_OPTIONAL);
     } else {
         avtext_print_integer(wctx, key, ts);
     }

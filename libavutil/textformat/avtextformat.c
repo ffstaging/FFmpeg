@@ -36,6 +36,10 @@
 
 #define SECTION_ID_NONE -1
 
+#define SHOW_OPTIONAL_FIELDS_AUTO       -1
+#define SHOW_OPTIONAL_FIELDS_NEVER       0
+#define SHOW_OPTIONAL_FIELDS_ALWAYS      1
+
 static const struct {
     double bin_val;
     double dec_val;

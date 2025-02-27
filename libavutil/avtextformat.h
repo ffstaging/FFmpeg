@@ -123,10 +123,6 @@ struct AVTextFormatContext {
     unsigned int string_validation_utf8_flags;
 };
 
-#define SHOW_OPTIONAL_FIELDS_AUTO       -1
-#define SHOW_OPTIONAL_FIELDS_NEVER       0
-#define SHOW_OPTIONAL_FIELDS_ALWAYS      1
-
 #define AV_TEXTFORMAT_PRINT_STRING_OPTIONAL 1
 #define AV_TEXTFORMAT_PRINT_STRING_VALIDATE 2
 

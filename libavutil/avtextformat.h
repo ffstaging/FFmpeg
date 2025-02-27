@@ -162,4 +162,12 @@ void avtext_print_data_hash(AVTextFormatContext *wctx, const char *name, const u
 void avtext_print_integers(AVTextFormatContext *wctx, const char *name, uint8_t *data, int size, 
                            const char *format, int columns, int bytes, int offset_add);
 
+extern const AVTextFormatter avtextformatter_default;
+extern const AVTextFormatter avtextformatter_compact;
+extern const AVTextFormatter avtextformatter_csv;
+extern const AVTextFormatter avtextformatter_flat;
+extern const AVTextFormatter avtextformatter_ini;
+extern const AVTextFormatter avtextformatter_json;
+extern const AVTextFormatter avtextformatter_xml;
+
 #endif /* AVUTIL_AVTEXTFORMAT_H */

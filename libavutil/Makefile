@@ -189,6 +189,12 @@ OBJS = adler32.o                                                        \
        xga_font_data.o                                                  \
        xtea.o                                                           \
        tea.o                                                            \
+       textformat/tf_compact.o                                          \
+       textformat/tf_default.o                                          \
+       textformat/tf_flat.o                                             \
+       textformat/tf_ini.o                                              \
+       textformat/tf_json.o                                             \
+       textformat/tf_xml.o                                              \
        tx.o                                                             \
        tx_float.o                                                       \
        tx_double.o                                                      \

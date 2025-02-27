@@ -54,6 +54,7 @@ static const struct {
     { 1.125899906842624e15, 1e15, "Pi", "P" },
 };
 
+
 static const char *avtext_context_get_formatter_name(void *p)
 {
     AVTextFormatContext *wctx = p;
@@ -90,45 +91,6 @@ static const AVClass textcontext_class = {
     .child_next = trextcontext_child_next,
 };
 
-
-static inline void textoutput_w8_avio(AVTextFormatContext *wctx, int b)
-{
-    avio_w8(wctx->avio, b);
-}
-
-static inline void textoutput_put_str_avio(AVTextFormatContext *wctx, const char *str)
-{
-    avio_write(wctx->avio, str, strlen(str));
-}
-
-static inline void textoutput_printf_avio(AVTextFormatContext *wctx, const char *fmt, ...)
-{
-    va_list ap;
-
-    va_start(ap, fmt);
-    avio_vprintf(wctx->avio, fmt, ap);
-    va_end(ap);
-}
-
-static inline void textoutput_w8_printf(AVTextFormatContext *wctx, int b)
-{
-    printf("%c", b);
-}
-
-static inline void textoutput_put_str_printf(AVTextFormatContext *wctx, const char *str)
-{
-    printf("%s", str);
-}
-
-static inline void textoutput_printf_printf(AVTextFormatContext *wctx, const char *fmt, ...)
-{
-    va_list ap;
-
-    va_start(ap, fmt);
-    vprintf(fmt, ap);
-    va_end(ap);
-}
-
 static void bprint_bytes(AVBPrint *bp, const uint8_t *ubuf, size_t ubuf_size)
 {
     int i;
@@ -156,18 +118,13 @@ int avtext_context_close(AVTextFormatContext **pwctx)
         av_opt_free(wctx->priv);
     av_freep(&wctx->priv);
     av_opt_free(wctx);
-    if (wctx->avio) {
-        avio_flush(wctx->avio);
-        ret = avio_close(wctx->avio);
-    }
     av_freep(pwctx);
     return ret;
 }
 
 
-int avtext_context_open(AVTextFormatContext **pwctx, const AVTextFormatter *formatter, const AVTextFormatter *writer, const char *args,
+int avtext_context_open(AVTextFormatContext **pwctx, const AVTextFormatter *formatter, const AVTextWriterContext *writer_context, const char *args,
                         const struct AVTextFormatSection *sections, int nb_sections,
-                        const char *output_filename,
                         int show_value_unit,
                         int use_value_prefix,
                         int use_byte_value_binary_prefix,
@@ -204,6 +161,7 @@ int avtext_context_open(AVTextFormatContext **pwctx, const AVTextFormatter *form
     wctx->level = -1;
     wctx->sections = sections;
     wctx->nb_sections = nb_sections;
+    wctx->writer = writer_context;
 
     av_opt_set_defaults(wctx);
 
@@ -267,21 +225,6 @@ int avtext_context_open(AVTextFormatContext **pwctx, const AVTextFormatter *form
                 return ret;
             }
         }
-    }
-
-    if (!output_filename) {
-        wctx->writer_w8 = textoutput_w8_printf;
-        wctx->writer_put_str = textoutput_put_str_printf;
-        wctx->writer_printf = textoutput_printf_printf;
-    } else {
-        if ((ret = avio_open(&wctx->avio, output_filename, AVIO_FLAG_WRITE)) < 0) {
-            av_log(wctx, AV_LOG_ERROR,
-                   "Failed to open output '%s' with error: %s\n", output_filename, av_err2str(ret));
-            goto fail;
-        }
-        wctx->writer_w8 = textoutput_w8_avio;
-        wctx->writer_put_str = textoutput_put_str_avio;
-        wctx->writer_printf = textoutput_printf_avio;
     }
 
     for (i = 0; i < SECTION_MAX_NB_LEVELS; i++)
@@ -614,3 +557,85 @@ void avtext_print_integers(AVTextFormatContext *wctx, const char *name,
     avtext_print_string(wctx, name, bp.str, 0);
     av_bprint_finalize(&bp, NULL);
 }
+
+static const char *avtextwriter_context_get_writer_name(void *p)
+{
+    AVTextWriterContext *wctx = p;
+    return wctx->writer->name;
+}
+
+static void *writercontext_child_next(void *obj, void *prev)
+{
+    AVTextFormatContext *ctx = obj;
+    if (!prev && ctx->formatter && ctx->formatter->priv_class && ctx->priv)
+        return ctx->priv;
+    return NULL;
+}
+
+static const AVClass textwriter_class = {
+    .class_name = "AVTextWriterContext",
+    .item_name  = avtextwriter_context_get_writer_name,
+    .version    = LIBAVUTIL_VERSION_INT,
+    .child_next = writercontext_child_next,
+};
+
+
+int avtextwriter_context_close(AVTextWriterContext **pwctx)
+{
+    AVTextWriterContext *wctx = *pwctx;
+    int ret = 0;
+
+    if (!wctx)
+        return -1;
+
+    if (wctx->writer->uninit)
+        wctx->writer->uninit(wctx);
+    if (wctx->writer->priv_class)
+        av_opt_free(wctx->priv);
+    av_freep(&wctx->priv);
+    av_freep(pwctx);
+    return ret;
+}
+
+
+int avtextwriter_context_open(AVTextWriterContext **pwctx, const AVTextWriter *writer)
+{
+    AVTextWriterContext *wctx;
+    int ret = 0;
+
+    if (!(wctx = av_mallocz(sizeof(AVTextWriterContext)))) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
+    }
+
+    if (!(wctx->priv = av_mallocz(writer->priv_size))) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
+    }
+
+    if (writer->priv_class) {
+        void *priv_ctx = wctx->priv;
+        *(const AVClass **)priv_ctx = writer->priv_class;
+        av_opt_set_defaults(priv_ctx);
+    }
+
+    wctx->class = &textwriter_class;
+    wctx->writer = writer;
+
+    av_opt_set_defaults(wctx);
+
+
+    if (wctx->writer->init)
+        ret = wctx->writer->init(wctx);
+    if (ret < 0)
+        goto fail;
+
+    *pwctx = wctx;
+
+    return 0;
+
+fail:
+    avtextwriter_context_close(&wctx);
+    return ret;
+}
+

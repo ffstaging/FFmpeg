@@ -29,6 +29,7 @@
 #include "bprint.h"
 #include "rational.h"
 #include "libavutil/hash.h"
+#include "avtextwriters.h"
 
 #define SECTION_MAX_NB_CHILDREN 11
 
@@ -53,7 +54,6 @@ struct AVTextFormatSection {
     int show_all_entries;
 };
 
-typedef struct AVTextFormatContext AVTextFormatContext;
 
 #define AV_TEXTFORMAT_FLAG_SUPPORTS_OPTIONAL_FIELDS 1
 #define AV_TEXTFORMAT_FLAG_SUPPORTS_MIXED_ARRAY_CONTENT 2
@@ -64,6 +64,8 @@ typedef enum {
     AV_TEXTFORMAT_STRING_VALIDATION_IGNORE,
     AV_TEXTFORMAT_STRING_VALIDATION_NB
 } StringValidation;
+
+typedef struct AVTextFormatContext AVTextFormatContext;
 
 typedef struct AVTextFormatter {
     const AVClass *priv_class;      ///< private class of the formatter, if any
@@ -87,11 +89,7 @@ typedef struct AVTextFormatter {
 struct AVTextFormatContext {
     const AVClass *class;           ///< class of the formatter
     const AVTextFormatter *formatter;           ///< the AVTextFormatter of which this is an instance
-    AVIOContext *avio;              ///< the I/O context used to write
-
-    void (* writer_w8)(AVTextFormatContext *wctx, int b);
-    void (* writer_put_str)(AVTextFormatContext *wctx, const char *str);
-    void (* writer_printf)(AVTextFormatContext *wctx, const char *fmt, ...);
+    AVTextWriterContext *writer;           ///< the AVTextWriterContext 
 
     char *name;                     ///< name of this formatter instance
     void *priv;                     ///< private data for use by the filter
@@ -126,9 +124,8 @@ struct AVTextFormatContext {
 #define AV_TEXTFORMAT_PRINT_STRING_OPTIONAL 1
 #define AV_TEXTFORMAT_PRINT_STRING_VALIDATE 2
 
-int avtext_context_open(AVTextFormatContext **pwctx, const AVTextFormatter *formatter, const AVTextFormatter *writer, const char *args,
+int avtext_context_open(AVTextFormatContext **pwctx, const AVTextFormatter *formatter, const AVTextWriterContext *writer, const char *args,
                         const struct AVTextFormatSection *sections, int nb_sections,
-                        const char *output_filename,
                         int show_value_unit,
                         int use_value_prefix,
                         int use_byte_value_binary_prefix,

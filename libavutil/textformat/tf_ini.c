@@ -35,9 +35,9 @@
 #include "../macros.h"
 #include "../opt.h"
 
-#define writer_w8(wctx_, b_) (wctx_)->writer_w8(wctx_, b_)
-#define writer_put_str(wctx_, str_) (wctx_)->writer_put_str(wctx_, str_)
-#define writer_printf(wctx_, fmt_, ...) (wctx_)->writer_printf(wctx_, fmt_, __VA_ARGS__)
+#define writer_w8(wctx_, b_) (wctx_)->writer->writer->writer_w8((wctx_)->writer, b_)
+#define writer_put_str(wctx_, str_) (wctx_)->writer->writer->writer_put_str((wctx_)->writer, str_)
+#define writer_printf(wctx_, fmt_, ...) (wctx_)->writer->writer->writer_printf((wctx_)->writer, fmt_, __VA_ARGS__)
 
 #define DEFINE_FORMATTER_CLASS(name)                   \
 static const char *name##_get_name(void *ctx)       \

@@ -3103,6 +3103,7 @@ int main(int argc, char **argv)
 {
     const AVTextFormatter *f;
     AVTextFormatContext *tctx;
+    AVTextWriterContext *wctx;
     char *buf;
     char *f_name = NULL, *f_args = NULL;
     int ret, input_ret, i;
@@ -3190,8 +3191,16 @@ int main(int argc, char **argv)
         goto end;
     }
 
-    if ((ret = avtext_context_open(&tctx, f, f_args,
-                           sections, FF_ARRAY_ELEMS(sections), output_filename, show_value_unit,
+    if (output_filename) {
+        ret = avtextwriter_create_file(&wctx, output_filename, 1);
+    } else
+        ret = avtextwriter_create_stdout(&wctx);
+
+    if (ret < 0)
+        goto end;
+
+    if ((ret = avtext_context_open(&tctx, f, wctx, f_args,
+                           sections, FF_ARRAY_ELEMS(sections), show_value_unit,
                             use_value_prefix, use_byte_value_binary_prefix, use_value_sexagesimal_format,
                             show_optional_fields, show_data_hash)) >= 0) {
         if (f == &avtextformatter_xml)
@@ -3222,9 +3231,14 @@ int main(int argc, char **argv)
         input_ret = ret;
 
         avtext_print_section_footer(tctx);
+
+        ret = avtextwriter_context_close(&wctx);
+        if (ret < 0)
+            av_log(NULL, AV_LOG_ERROR, "Writing output failed (closing writer): %s\n", av_err2str(ret));
+
         ret = avtext_context_close(&tctx);
         if (ret < 0)
-            av_log(NULL, AV_LOG_ERROR, "Writing output failed: %s\n", av_err2str(ret));
+            av_log(NULL, AV_LOG_ERROR, "Writing output failed (closing formatter): %s\n", av_err2str(ret));
 
         ret = FFMIN(ret, input_ret);
     }

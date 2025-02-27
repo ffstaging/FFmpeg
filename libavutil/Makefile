@@ -10,6 +10,7 @@ HEADERS = adler32.h                                                     \
           avassert.h                                                    \
           avstring.h                                                    \
           avtextformat.h                                                \
+          avtextwriters.h                                               \
           avutil.h                                                      \
           base64.h                                                      \
           blowfish.h                                                    \
@@ -195,6 +196,9 @@ OBJS = adler32.o                                                        \
        textformat/tf_ini.o                                              \
        textformat/tf_json.o                                             \
        textformat/tf_xml.o                                              \
+       textformat/tw_avio.o                                             \
+       textformat/tw_buffer.o                                           \
+       textformat/tw_stdout.o                                           \
        tx.o                                                             \
        tx_float.o                                                       \
        tx_double.o                                                      \

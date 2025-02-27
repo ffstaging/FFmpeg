@@ -28,6 +28,7 @@
 #include <libavformat/avio.h>
 #include "bprint.h"
 #include "rational.h"
+#include "libavutil/hash.h"
 
 #define SECTION_MAX_NB_CHILDREN 11
 
@@ -110,11 +111,60 @@ struct AVTextFormatContext {
     unsigned int nb_section_frame;  ///< number of the frame  section in case we are in "packets_and_frames" section
     unsigned int nb_section_packet_frame; ///< nb_section_packet or nb_section_frame according if is_packets_and_frames
 
+    int show_optional_fields;
+    int show_value_unit;
+    int use_value_prefix;
+    int use_byte_value_binary_prefix;
+    int use_value_sexagesimal_format;
+
+    struct AVHashContext *hash;
+
     int string_validation;
     char *string_validation_replacement;
     unsigned int string_validation_utf8_flags;
 };
 
+#define SHOW_OPTIONAL_FIELDS_AUTO       -1
+#define SHOW_OPTIONAL_FIELDS_NEVER       0
+#define SHOW_OPTIONAL_FIELDS_ALWAYS      1
 
+#define PRINT_STRING_OPT      1
+#define PRINT_STRING_VALIDATE 2
+
+int avtext_context_open(AVTextFormatContext **pwctx, const AVTextFormatter *writer, const char *args,
+                        const struct AVTextFormatSection *sections, int nb_sections,
+                        const char *output_filename,
+                        int show_value_unit,
+                        int use_value_prefix,
+                        int use_byte_value_binary_prefix,
+                        int use_value_sexagesimal_format,
+                        int show_optional_fields,
+                        char *show_data_hash);
+
+int avtext_context_close(AVTextFormatContext **wctx);
+
+
+void avtext_print_section_header(AVTextFormatContext *wctx, const void *data, int section_id);
+
+void avtext_print_section_footer(AVTextFormatContext *wctx);
+
+void avtext_print_integer(AVTextFormatContext *wctx, const char *key, int64_t val);
+
+int avtext_print_string(AVTextFormatContext *wctx, const char *key, const char *val, int flags);
+
+void avtext_print_unit_int(AVTextFormatContext *wctx, const char *key, int value, const char *unit);
+
+void avtext_print_rational(AVTextFormatContext *wctx, const char *key, AVRational q, char sep);
+
+void avtext_print_time(AVTextFormatContext *wctx, const char *key, int64_t ts, const AVRational *time_base, int is_duration);
+
+void avtext_print_ts(AVTextFormatContext *wctx, const char *key, int64_t ts, int is_duration);
+
+void avtext_print_data(AVTextFormatContext *wctx, const char *name, const uint8_t *data, int size);
+
+void avtext_print_data_hash(AVTextFormatContext *wctx, const char *name, const uint8_t *data, int size);
+
+void avtext_print_integers(AVTextFormatContext *wctx, const char *name, uint8_t *data, int size, 
+                           const char *format, int columns, int bytes, int offset_add);
 
 #endif /* AVUTIL_AVTEXTFORMAT_H */

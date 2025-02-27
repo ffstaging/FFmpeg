@@ -115,6 +115,7 @@ OBJS = adler32.o                                                        \
        audio_fifo.o                                                     \
        avstring.o                                                       \
        avsscanf.o                                                       \
+       textformat/avtextformat.o                                        \
        base64.o                                                         \
        blowfish.o                                                       \
        bprint.o                                                         \

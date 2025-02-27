@@ -412,36 +412,36 @@ static void log_callback(void *ptr, int level, const char *fmt, va_list vl)
 #define writer_put_str(wctx_, str_) (wctx_)->writer_put_str(wctx_, str_)
 #define writer_printf(wctx_, fmt_, ...) (wctx_)->writer_printf(wctx_, fmt_, __VA_ARGS__)
 
-#define MAX_REGISTERED_WRITERS_NB 64
+#define MAX_REGISTERED_FORMATTERS_NB 64
 
-static const AVTextFormatter *registered_writers[MAX_REGISTERED_WRITERS_NB + 1];
+static const AVTextFormatter *registered_formatters[MAX_REGISTERED_FORMATTERS_NB + 1];
 
-static int writer_register(const AVTextFormatter *writer)
+static int formatter_register(const AVTextFormatter *formatter)
 {
-    static int next_registered_writer_idx = 0;
+    static int next_registered_formatter_idx = 0;
 
-    if (next_registered_writer_idx == MAX_REGISTERED_WRITERS_NB)
+    if (next_registered_formatter_idx == MAX_REGISTERED_FORMATTERS_NB)
         return AVERROR(ENOMEM);
 
-    registered_writers[next_registered_writer_idx++] = writer;
+    registered_formatters[next_registered_formatter_idx++] = formatter;
     return 0;
 }
 
-static const AVTextFormatter *writer_get_by_name(const char *name)
+static const AVTextFormatter *formatter_get_by_name(const char *name)
 {
     int i;
 
-    for (i = 0; registered_writers[i]; i++)
-        if (!strcmp(registered_writers[i]->name, name))
-            return registered_writers[i];
+    for (i = 0; registered_formatters[i]; i++)
+        if (!strcmp(registered_formatters[i]->name, name))
+            return registered_formatters[i];
 
     return NULL;
 }
 
 
-/* WRITERS */
+/* FORMATTERS */
 
-#define DEFINE_WRITER_CLASS(name)                   \
+#define DEFINE_FORMATTER_CLASS(name)                   \
 static const char *name##_get_name(void *ctx)       \
 {                                                   \
     return #name ;                                  \
@@ -472,7 +472,7 @@ static const AVOption default_options[] = {
     {NULL},
 };
 
-DEFINE_WRITER_CLASS(default);
+DEFINE_FORMATTER_CLASS(default);
 
 /* lame uppercasing routine, assumes the string is lower case ASCII */
 static inline char *upcase_string(char *dst, size_t dst_size, const char *src)
@@ -630,7 +630,7 @@ static const AVOption compact_options[]= {
     {NULL},
 };
 
-DEFINE_WRITER_CLASS(compact);
+DEFINE_FORMATTER_CLASS(compact);
 
 static av_cold int compact_init(AVTextFormatContext *wctx)
 {
@@ -768,7 +768,7 @@ static const AVOption csv_options[] = {
     {NULL},
 };
 
-DEFINE_WRITER_CLASS(csv);
+DEFINE_FORMATTER_CLASS(csv);
 
 static const AVTextFormatter csv_formatter = {
     .name                 = "csv",
@@ -802,7 +802,7 @@ static const AVOption flat_options[]= {
     {NULL},
 };
 
-DEFINE_WRITER_CLASS(flat);
+DEFINE_FORMATTER_CLASS(flat);
 
 static av_cold int flat_init(AVTextFormatContext *wctx)
 {
@@ -923,7 +923,7 @@ static const AVOption ini_options[] = {
     {NULL},
 };
 
-DEFINE_WRITER_CLASS(ini);
+DEFINE_FORMATTER_CLASS(ini);
 
 static char *ini_escape_str(AVBPrint *dst, const char *src)
 {
@@ -1030,7 +1030,7 @@ static const AVOption json_options[]= {
     { NULL }
 };
 
-DEFINE_WRITER_CLASS(json);
+DEFINE_FORMATTER_CLASS(json);
 
 static av_cold int json_init(AVTextFormatContext *wctx)
 {
@@ -1200,7 +1200,7 @@ static const AVOption xml_options[] = {
     {NULL},
 };
 
-DEFINE_WRITER_CLASS(xml);
+DEFINE_FORMATTER_CLASS(xml);
 
 static av_cold int xml_init(AVTextFormatContext *wctx)
 {
@@ -3381,7 +3381,7 @@ static void close_input_file(InputFile *ifile)
     avformat_close_input(&ifile->fmt_ctx);
 }
 
-static int probe_file(AVTextFormatContext *wctx, const char *filename,
+static int probe_file(AVTextFormatContext *tctx, const char *filename,
                       const char *print_filename)
 {
     InputFile ifile = { 0 };
@@ -3423,40 +3423,40 @@ static int probe_file(AVTextFormatContext *wctx, const char *filename,
 
     if (do_read_frames || do_read_packets) {
         if (do_show_frames && do_show_packets &&
-            wctx->writer->flags & AV_TEXTFORMAT_FLAG_SUPPORTS_MIXED_ARRAY_CONTENT)
+            tctx->formatter->flags & AV_TEXTFORMAT_FLAG_SUPPORTS_MIXED_ARRAY_CONTENT)
             section_id = SECTION_ID_PACKETS_AND_FRAMES;
         else if (do_show_packets && !do_show_frames)
             section_id = SECTION_ID_PACKETS;
         else // (!do_show_packets && do_show_frames)
             section_id = SECTION_ID_FRAMES;
         if (do_show_frames || do_show_packets)
-            avtext_print_section_header(wctx, NULL, section_id);
-        ret = read_packets(wctx, &ifile);
+            avtext_print_section_header(tctx, NULL, section_id);
+        ret = read_packets(tctx, &ifile);
         if (do_show_frames || do_show_packets)
-            avtext_print_section_footer(wctx);
+            avtext_print_section_footer(tctx);
         CHECK_END;
     }
 
     if (do_show_programs) {
-        ret = show_programs(wctx, &ifile);
+        ret = show_programs(tctx, &ifile);
         CHECK_END;
     }
 
     if (do_show_stream_groups) {
-        ret = show_stream_groups(wctx, &ifile);
+        ret = show_stream_groups(tctx, &ifile);
         CHECK_END;
     }
 
     if (do_show_streams) {
-        ret = show_streams(wctx, &ifile);
+        ret = show_streams(tctx, &ifile);
         CHECK_END;
     }
     if (do_show_chapters) {
-        ret = show_chapters(wctx, &ifile);
+        ret = show_chapters(tctx, &ifile);
         CHECK_END;
     }
     if (do_show_format) {
-        ret = show_format(wctx, &ifile);
+        ret = show_format(tctx, &ifile);
         CHECK_END;
     }
 
@@ -4019,10 +4019,10 @@ static inline int check_section_show_entries(int section_id)
 
 int main(int argc, char **argv)
 {
-    const AVTextFormatter *w;
-    AVTextFormatContext *wctx;
+    const AVTextFormatter *f;
+    AVTextFormatContext *tctx;
     char *buf;
-    char *w_name = NULL, *w_args = NULL;
+    char *f_name = NULL, *f_args = NULL;
     int ret, input_ret, i;
 
     init_dynload();
@@ -4084,7 +4084,7 @@ int main(int argc, char **argv)
         goto end;
     }
 
-    writer_register_all();
+    formatters_register_all();
 
     if (!output_format)
         output_format = av_strdup("default");
@@ -4092,37 +4092,37 @@ int main(int argc, char **argv)
         ret = AVERROR(ENOMEM);
         goto end;
     }
-    w_name = av_strtok(output_format, "=", &buf);
-    if (!w_name) {
+    f_name = av_strtok(output_format, "=", &buf);
+    if (!f_name) {
         av_log(NULL, AV_LOG_ERROR,
                "No name specified for the output format\n");
         ret = AVERROR(EINVAL);
         goto end;
     }
-    w_args = buf;
+    f_args = buf;
 
-    w = writer_get_by_name(w_name);
-    if (!w) {
-        av_log(NULL, AV_LOG_ERROR, "Unknown output format with name '%s'\n", w_name);
+    f = formatter_get_by_name(f_name);
+    if (!f) {
+        av_log(NULL, AV_LOG_ERROR, "Unknown output format with name '%s'\n", f_name);
         ret = AVERROR(EINVAL);
         goto end;
     }
 
-    if ((ret = avtext_context_open(&wctx, w, w_args,
+    if ((ret = avtext_context_open(&tctx, f, f_args,
                            sections, FF_ARRAY_ELEMS(sections), output_filename, show_value_unit,
                             use_value_prefix, use_byte_value_binary_prefix, use_value_sexagesimal_format,
                             show_optional_fields, show_data_hash)) >= 0) {
-        if (w == &xml_formatter)
-            wctx->string_validation_utf8_flags |= AV_UTF8_FLAG_EXCLUDE_XML_INVALID_CONTROL_CODES;
+        if (f == &avtextformatter_xml)
+            tctx->string_validation_utf8_flags |= AV_UTF8_FLAG_EXCLUDE_XML_INVALID_CONTROL_CODES;
 
-        avtext_print_section_header(wctx, NULL, SECTION_ID_ROOT);
+        avtext_print_section_header(tctx, NULL, SECTION_ID_ROOT);
 
         if (do_show_program_version)
-            ffprobe_show_program_version(wctx);
+            ffprobe_show_program_version(tctx);
         if (do_show_library_versions)
-            ffprobe_show_library_versions(wctx);
+            ffprobe_show_library_versions(tctx);
         if (do_show_pixel_formats)
-            ffprobe_show_pixel_formats(wctx);
+            ffprobe_show_pixel_formats(tctx);
 
         if (!input_filename &&
             ((do_show_format || do_show_programs || do_show_stream_groups || do_show_streams || do_show_chapters || do_show_packets || do_show_error) ||
@@ -4132,15 +4132,15 @@ int main(int argc, char **argv)
             av_log(NULL, AV_LOG_ERROR, "Use -h to get full help or, even better, run 'man %s'.\n", program_name);
             ret = AVERROR(EINVAL);
         } else if (input_filename) {
-            ret = probe_file(wctx, input_filename, print_input_filename);
+            ret = probe_file(tctx, input_filename, print_input_filename);
             if (ret < 0 && do_show_error)
-                show_error(wctx, ret);
+                show_error(tctx, ret);
         }
 
         input_ret = ret;
 
-        avtext_print_section_footer(wctx);
-        ret = avtext_context_close(&wctx);
+        avtext_print_section_footer(tctx);
+        ret = avtext_context_close(&tctx);
         if (ret < 0)
             av_log(NULL, AV_LOG_ERROR, "Writing output failed: %s\n", av_err2str(ret));
 

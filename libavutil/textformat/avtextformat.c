@@ -54,10 +54,10 @@ static const struct {
     { 1.125899906842624e15, 1e15, "Pi", "P" },
 };
 
-static const char *avtext_context_get_writer_name(void *p)
+static const char *avtext_context_get_formatter_name(void *p)
 {
     AVTextFormatContext *wctx = p;
-    return wctx->writer->name;
+    return wctx->formatter->name;
 }
 
 #define OFFSET(x) offsetof(AVTextFormatContext, x)
@@ -77,14 +77,14 @@ static const AVOption textcontext_options[] = {
 static void *trextcontext_child_next(void *obj, void *prev)
 {
     AVTextFormatContext *ctx = obj;
-    if (!prev && ctx->writer && ctx->writer->priv_class && ctx->priv)
+    if (!prev && ctx->formatter && ctx->formatter->priv_class && ctx->priv)
         return ctx->priv;
     return NULL;
 }
 
 static const AVClass textcontext_class = {
     .class_name = "AVTextContext",
-    .item_name  = avtext_context_get_writer_name,
+    .item_name  = avtext_context_get_formatter_name,
     .option     = textcontext_options,
     .version    = LIBAVUTIL_VERSION_INT,
     .child_next = trextcontext_child_next,
@@ -148,11 +148,11 @@ int avtext_context_close(AVTextFormatContext **pwctx)
 
     av_hash_freep(&wctx->hash);
 
-    if (wctx->writer->uninit)
-        wctx->writer->uninit(wctx);
+    if (wctx->formatter->uninit)
+        wctx->formatter->uninit(wctx);
     for (i = 0; i < SECTION_MAX_NB_LEVELS; i++)
         av_bprint_finalize(&wctx->section_pbuf[i], NULL);
-    if (wctx->writer->priv_class)
+    if (wctx->formatter->priv_class)
         av_opt_free(wctx->priv);
     av_freep(&wctx->priv);
     av_opt_free(wctx);
@@ -165,7 +165,7 @@ int avtext_context_close(AVTextFormatContext **pwctx)
 }
 
 
-int avtext_context_open(AVTextFormatContext **pwctx, const AVTextFormatter *writer, const char *args,
+int avtext_context_open(AVTextFormatContext **pwctx, const AVTextFormatter *formatter, const AVTextFormatter *writer, const char *args,
                         const struct AVTextFormatSection *sections, int nb_sections,
                         const char *output_filename,
                         int show_value_unit,
@@ -183,7 +183,7 @@ int avtext_context_open(AVTextFormatContext **pwctx, const AVTextFormatter *writ
         goto fail;
     }
 
-    if (!(wctx->priv = av_mallocz(writer->priv_size))) {
+    if (!(wctx->priv = av_mallocz(formatter->priv_size))) {
         ret = AVERROR(ENOMEM);
         goto fail;
     }
@@ -200,16 +200,16 @@ int avtext_context_open(AVTextFormatContext **pwctx, const AVTextFormatter *writ
     }
 
     wctx->class = &textcontext_class;
-    wctx->writer = writer;
+    wctx->formatter = formatter;
     wctx->level = -1;
     wctx->sections = sections;
     wctx->nb_sections = nb_sections;
 
     av_opt_set_defaults(wctx);
 
-    if (writer->priv_class) {
+    if (formatter->priv_class) {
         void *priv_ctx = wctx->priv;
-        *(const AVClass **)priv_ctx = writer->priv_class;
+        *(const AVClass **)priv_ctx = formatter->priv_class;
         av_opt_set_defaults(priv_ctx);
     }
 
@@ -219,14 +219,14 @@ int avtext_context_open(AVTextFormatContext **pwctx, const AVTextFormatter *writ
         const AVDictionaryEntry *opt = NULL;
 
         if ((ret = av_dict_parse_string(&opts, args, "=", ":", 0)) < 0) {
-            av_log(wctx, AV_LOG_ERROR, "Failed to parse option string '%s' provided to writer context\n", args);
+            av_log(wctx, AV_LOG_ERROR, "Failed to parse option string '%s' provided to textformat context\n", args);
             av_dict_free(&opts);
             goto fail;
         }
 
         while ((opt = av_dict_iterate(opts, opt))) {
             if ((ret = av_opt_set(wctx, opt->key, opt->value, AV_OPT_SEARCH_CHILDREN)) < 0) {
-                av_log(wctx, AV_LOG_ERROR, "Failed to set option '%s' with value '%s' provided to writer context\n",
+                av_log(wctx, AV_LOG_ERROR, "Failed to set option '%s' with value '%s' provided to textformat context\n",
                        opt->key, opt->value);
                 av_dict_free(&opts);
                 goto fail;
@@ -287,8 +287,8 @@ int avtext_context_open(AVTextFormatContext **pwctx, const AVTextFormatter *writ
     for (i = 0; i < SECTION_MAX_NB_LEVELS; i++)
         av_bprint_init(&wctx->section_pbuf[i], 1, AV_BPRINT_SIZE_UNLIMITED);
 
-    if (wctx->writer->init)
-        ret = wctx->writer->init(wctx);
+    if (wctx->formatter->init)
+        ret = wctx->formatter->init(wctx);
     if (ret < 0)
         goto fail;
 
@@ -319,8 +319,8 @@ void avtext_print_section_header(AVTextFormatContext *wctx,
     memset(wctx->nb_item_type[wctx->level], 0, sizeof(wctx->nb_item_type[wctx->level]));
     wctx->section[wctx->level] = &wctx->sections[section_id];
 
-    if (wctx->writer->print_section_header)
-        wctx->writer->print_section_header(wctx, data);
+    if (wctx->formatter->print_section_header)
+        wctx->formatter->print_section_header(wctx, data);
 }
 
 void avtext_print_section_footer(AVTextFormatContext *wctx)
@@ -334,8 +334,8 @@ void avtext_print_section_footer(AVTextFormatContext *wctx)
         wctx->nb_item_type[wctx->level - 1][section_id]++;
     }
 
-    if (wctx->writer->print_section_footer)
-        wctx->writer->print_section_footer(wctx);
+    if (wctx->formatter->print_section_footer)
+        wctx->formatter->print_section_footer(wctx);
     wctx->level--;
 }
 
@@ -345,7 +345,7 @@ void avtext_print_integer(AVTextFormatContext *wctx,
     const struct AVTextFormatSection *section = wctx->section[wctx->level];
 
     if (section->show_all_entries || av_dict_get(section->entries_to_show, key, NULL, 0)) {
-        wctx->writer->print_integer(wctx, key, val);
+        wctx->formatter->print_integer(wctx, key, val);
         wctx->nb_item[wctx->level]++;
     }
 }
@@ -482,7 +482,7 @@ int avtext_print_string(AVTextFormatContext *wctx, const char *key, const char *
     if (wctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_NEVER ||
         (wctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_AUTO
         && (flags & AV_TEXTFORMAT_PRINT_STRING_OPTIONAL)
-        && !(wctx->writer->flags & AV_TEXTFORMAT_FLAG_SUPPORTS_OPTIONAL_FIELDS)))
+        && !(wctx->formatter->flags & AV_TEXTFORMAT_FLAG_SUPPORTS_OPTIONAL_FIELDS)))
         return 0;
 
     if (section->show_all_entries || av_dict_get(section->entries_to_show, key, NULL, 0)) {
@@ -492,7 +492,7 @@ int avtext_print_string(AVTextFormatContext *wctx, const char *key, const char *
             if (ret < 0) goto end;
             ret = validate_string(wctx, &val1, val);
             if (ret < 0) goto end;
-            wctx->writer->print_string(wctx, key1, val1);
+            wctx->formatter->print_string(wctx, key1, val1);
         end:
             if (ret < 0) {
                 av_log(wctx, AV_LOG_ERROR,
@@ -502,7 +502,7 @@ int avtext_print_string(AVTextFormatContext *wctx, const char *key, const char *
             av_free(key1);
             av_free(val1);
         } else {
-            wctx->writer->print_string(wctx, key, val);
+            wctx->formatter->print_string(wctx, key, val);
         }
 
         wctx->nb_item[wctx->level]++;

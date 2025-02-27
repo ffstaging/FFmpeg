@@ -66,8 +66,8 @@ typedef enum {
 } StringValidation;
 
 typedef struct AVTextFormatter {
-    const AVClass *priv_class;      ///< private class of the writer, if any
-    int priv_size;                  ///< private size for the writer context
+    const AVClass *priv_class;      ///< private class of the formatter, if any
+    int priv_size;                  ///< private size for the formatter context
     const char *name;
 
     int  (*init)  (AVTextFormatContext *wctx);
@@ -85,15 +85,15 @@ typedef struct AVTextFormatter {
 #define SECTION_MAX_NB_SECTIONS 100
 
 struct AVTextFormatContext {
-    const AVClass *class;           ///< class of the writer
-    const AVTextFormatter *writer;           ///< the AVTextFormatter of which this is an instance
+    const AVClass *class;           ///< class of the formatter
+    const AVTextFormatter *formatter;           ///< the AVTextFormatter of which this is an instance
     AVIOContext *avio;              ///< the I/O context used to write
 
     void (* writer_w8)(AVTextFormatContext *wctx, int b);
     void (* writer_put_str)(AVTextFormatContext *wctx, const char *str);
     void (* writer_printf)(AVTextFormatContext *wctx, const char *fmt, ...);
 
-    char *name;                     ///< name of this writer instance
+    char *name;                     ///< name of this formatter instance
     void *priv;                     ///< private data for use by the filter
 
     const struct AVTextFormatSection *sections; ///< array containing all sections
@@ -108,7 +108,7 @@ struct AVTextFormatContext {
     /** section per each level */
     const struct AVTextFormatSection *section[SECTION_MAX_NB_LEVELS];
     AVBPrint section_pbuf[SECTION_MAX_NB_LEVELS]; ///< generic print buffer dedicated to each section,
-                                                  ///  used by various writers
+                                                  ///  used by various formatters
 
     int show_optional_fields;
     int show_value_unit;
@@ -126,7 +126,7 @@ struct AVTextFormatContext {
 #define AV_TEXTFORMAT_PRINT_STRING_OPTIONAL 1
 #define AV_TEXTFORMAT_PRINT_STRING_VALIDATE 2
 
-int avtext_context_open(AVTextFormatContext **pwctx, const AVTextFormatter *writer, const char *args,
+int avtext_context_open(AVTextFormatContext **pwctx, const AVTextFormatter *formatter, const AVTextFormatter *writer, const char *args,
                         const struct AVTextFormatSection *sections, int nb_sections,
                         const char *output_filename,
                         int show_value_unit,

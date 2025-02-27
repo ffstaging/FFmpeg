@@ -36,6 +36,7 @@
 #include "libavutil/ambient_viewing_environment.h"
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
+#include "libavutil/avtextformat.h"
 #include "libavutil/bprint.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/display.h"
@@ -156,8 +157,6 @@ static int find_stream_info  = 1;
 
 /* section structure definition */
 
-#define SECTION_MAX_NB_CHILDREN 11
-
 typedef enum {
     SECTION_ID_NONE = -1,
     SECTION_ID_CHAPTER,
@@ -228,25 +227,6 @@ typedef enum {
     SECTION_ID_SUBTITLE,
 } SectionID;
 
-struct section {
-    int id;             ///< unique id identifying a section
-    const char *name;
-
-#define SECTION_FLAG_IS_WRAPPER      1 ///< the section only contains other sections, but has no data at its own level
-#define SECTION_FLAG_IS_ARRAY        2 ///< the section contains an array of elements of the same type
-#define SECTION_FLAG_HAS_VARIABLE_FIELDS 4 ///< the section may contain a variable number of fields with variable keys.
-                                           ///  For these sections the element_name field is mandatory.
-#define SECTION_FLAG_HAS_TYPE        8 ///< the section contains a type to distinguish multiple nested elements
-
-    int flags;
-    const SectionID children_ids[SECTION_MAX_NB_CHILDREN+1]; ///< list of children section IDS, terminated by -1
-    const char *element_name; ///< name of the contained element, if provided
-    const char *unique_name;  ///< unique section name, in case the name is ambiguous
-    AVDictionary *entries_to_show;
-    const char *(* get_type)(const void *data); ///< function returning a type if defined, must be defined when SECTION_FLAG_HAS_TYPE is defined
-    int show_all_entries;
-};
-
 static const char *get_packet_side_data_type(const void *data)
 {
     const AVPacketSideData *sd = (const AVPacketSideData *)data;
@@ -270,7 +250,7 @@ static const char *get_stream_group_type(const void *data)
     return av_x_if_null(avformat_stream_group_name(stg->type), "unknown");
 }
 
-static struct section sections[] = {
+static struct AVTextFormatSection sections[] = {
     [SECTION_ID_CHAPTERS] =           { SECTION_ID_CHAPTERS, "chapters", SECTION_FLAG_IS_ARRAY, { SECTION_ID_CHAPTER, -1 } },
     [SECTION_ID_CHAPTER] =            { SECTION_ID_CHAPTER, "chapter", 0, { SECTION_ID_CHAPTER_TAGS, -1 } },
     [SECTION_ID_CHAPTER_TAGS] =       { SECTION_ID_CHAPTER_TAGS, "tags", SECTION_FLAG_HAS_VARIABLE_FIELDS, { -1 }, .element_name = "tag", .unique_name = "chapter_tags" },
@@ -501,77 +481,13 @@ static char *value_string(char *buf, int buf_size, struct unit_value uv)
 
 /* WRITERS API */
 
-typedef struct WriterContext WriterContext;
-
-#define WRITER_FLAG_DISPLAY_OPTIONAL_FIELDS 1
-#define WRITER_FLAG_PUT_PACKETS_AND_FRAMES_IN_SAME_CHAPTER 2
-
-typedef enum {
-    WRITER_STRING_VALIDATION_FAIL,
-    WRITER_STRING_VALIDATION_REPLACE,
-    WRITER_STRING_VALIDATION_IGNORE,
-    WRITER_STRING_VALIDATION_NB
-} StringValidation;
-
-typedef struct Writer {
-    const AVClass *priv_class;      ///< private class of the writer, if any
-    int priv_size;                  ///< private size for the writer context
-    const char *name;
-
-    int  (*init)  (WriterContext *wctx);
-    void (*uninit)(WriterContext *wctx);
-
-    void (*print_section_header)(WriterContext *wctx, const void *data);
-    void (*print_section_footer)(WriterContext *wctx);
-    void (*print_integer)       (WriterContext *wctx, const char *, int64_t);
-    void (*print_rational)      (WriterContext *wctx, AVRational *q, char *sep);
-    void (*print_string)        (WriterContext *wctx, const char *, const char *);
-    int flags;                  ///< a combination or WRITER_FLAG_*
-} Writer;
-
-#define SECTION_MAX_NB_LEVELS 12
-
-struct WriterContext {
-    const AVClass *class;           ///< class of the writer
-    const Writer *writer;           ///< the Writer of which this is an instance
-    AVIOContext *avio;              ///< the I/O context used to write
-
-    void (* writer_w8)(WriterContext *wctx, int b);
-    void (* writer_put_str)(WriterContext *wctx, const char *str);
-    void (* writer_printf)(WriterContext *wctx, const char *fmt, ...);
-
-    char *name;                     ///< name of this writer instance
-    void *priv;                     ///< private data for use by the filter
-
-    const struct section *sections; ///< array containing all sections
-    int nb_sections;                ///< number of sections
-
-    int level;                      ///< current level, starting from 0
-
-    /** number of the item printed in the given section, starting from 0 */
-    unsigned int nb_item[SECTION_MAX_NB_LEVELS];
-
-    /** section per each level */
-    const struct section *section[SECTION_MAX_NB_LEVELS];
-    AVBPrint section_pbuf[SECTION_MAX_NB_LEVELS]; ///< generic print buffer dedicated to each section,
-                                                  ///  used by various writers
-
-    unsigned int nb_section_packet; ///< number of the packet section in case we are in "packets_and_frames" section
-    unsigned int nb_section_frame;  ///< number of the frame  section in case we are in "packets_and_frames" section
-    unsigned int nb_section_packet_frame; ///< nb_section_packet or nb_section_frame according if is_packets_and_frames
-
-    int string_validation;
-    char *string_validation_replacement;
-    unsigned int string_validation_utf8_flags;
-};
-
 static const char *writer_get_name(void *p)
 {
-    WriterContext *wctx = p;
+    AVTextFormatContext *wctx = p;
     return wctx->writer->name;
 }
 
-#define OFFSET(x) offsetof(WriterContext, x)
+#define OFFSET(x) offsetof(AVTextFormatContext, x)
 
 static const AVOption writer_options[] = {
     { "string_validation", "set string validation mode",
@@ -588,21 +504,21 @@ static const AVOption writer_options[] = {
 
 static void *writer_child_next(void *obj, void *prev)
 {
-    WriterContext *ctx = obj;
+    AVTextFormatContext *ctx = obj;
     if (!prev && ctx->writer && ctx->writer->priv_class && ctx->priv)
         return ctx->priv;
     return NULL;
 }
 
 static const AVClass writer_class = {
-    .class_name = "Writer",
+    .class_name = "AVTextFormatter",
     .item_name  = writer_get_name,
     .option     = writer_options,
     .version    = LIBAVUTIL_VERSION_INT,
     .child_next = writer_child_next,
 };
 
-static int writer_close(WriterContext **wctx)
+static int writer_close(AVTextFormatContext **wctx)
 {
     int i;
     int ret = 0;
@@ -634,17 +550,17 @@ static void bprint_bytes(AVBPrint *bp, const uint8_t *ubuf, size_t ubuf_size)
         av_bprintf(bp, "%02X", ubuf[i]);
 }
 
-static inline void writer_w8_avio(WriterContext *wctx, int b)
+static inline void writer_w8_avio(AVTextFormatContext *wctx, int b)
 {
     avio_w8(wctx->avio, b);
 }
 
-static inline void writer_put_str_avio(WriterContext *wctx, const char *str)
+static inline void writer_put_str_avio(AVTextFormatContext *wctx, const char *str)
 {
     avio_write(wctx->avio, str, strlen(str));
 }
 
-static inline void writer_printf_avio(WriterContext *wctx, const char *fmt, ...)
+static inline void writer_printf_avio(AVTextFormatContext *wctx, const char *fmt, ...)
 {
     va_list ap;
 
@@ -653,17 +569,17 @@ static inline void writer_printf_avio(WriterContext *wctx, const char *fmt, ...)
     va_end(ap);
 }
 
-static inline void writer_w8_printf(WriterContext *wctx, int b)
+static inline void writer_w8_printf(AVTextFormatContext *wctx, int b)
 {
     printf("%c", b);
 }
 
-static inline void writer_put_str_printf(WriterContext *wctx, const char *str)
+static inline void writer_put_str_printf(AVTextFormatContext *wctx, const char *str)
 {
     printf("%s", str);
 }
 
-static inline void writer_printf_printf(WriterContext *wctx, const char *fmt, ...)
+static inline void writer_printf_printf(AVTextFormatContext *wctx, const char *fmt, ...)
 {
     va_list ap;
 
@@ -672,12 +588,12 @@ static inline void writer_printf_printf(WriterContext *wctx, const char *fmt, ..
     va_end(ap);
 }
 
-static int writer_open(WriterContext **wctx, const Writer *writer, const char *args,
-                       const struct section *sections, int nb_sections, const char *output)
+static int writer_open(AVTextFormatContext **wctx, const AVTextFormatter *writer, const char *args,
+                       const struct AVTextFormatSection *sections, int nb_sections, const char *output)
 {
     int i, ret = 0;
 
-    if (!(*wctx = av_mallocz(sizeof(WriterContext)))) {
+    if (!(*wctx = av_mallocz(sizeof(AVTextFormatContext)))) {
         ret = AVERROR(ENOMEM);
         goto fail;
     }
@@ -774,7 +690,7 @@ fail:
     return ret;
 }
 
-static inline void writer_print_section_header(WriterContext *wctx,
+static inline void writer_print_section_header(AVTextFormatContext *wctx,
                                                const void *data,
                                                int section_id)
 {
@@ -799,7 +715,7 @@ static inline void writer_print_section_header(WriterContext *wctx,
         wctx->writer->print_section_header(wctx, data);
 }
 
-static inline void writer_print_section_footer(WriterContext *wctx)
+static inline void writer_print_section_footer(AVTextFormatContext *wctx)
 {
     int section_id = wctx->section[wctx->level]->id;
     int parent_section_id = wctx->level ?
@@ -816,10 +732,10 @@ static inline void writer_print_section_footer(WriterContext *wctx)
     wctx->level--;
 }
 
-static inline void writer_print_integer(WriterContext *wctx,
+static inline void writer_print_integer(AVTextFormatContext *wctx,
                                         const char *key, int64_t val)
 {
-    const struct section *section = wctx->section[wctx->level];
+    const struct AVTextFormatSection *section = wctx->section[wctx->level];
 
     if (section->show_all_entries || av_dict_get(section->entries_to_show, key, NULL, 0)) {
         wctx->writer->print_integer(wctx, key, val);
@@ -827,7 +743,7 @@ static inline void writer_print_integer(WriterContext *wctx,
     }
 }
 
-static inline int validate_string(WriterContext *wctx, char **dstp, const char *src)
+static inline int validate_string(AVTextFormatContext *wctx, char **dstp, const char *src)
 {
     const uint8_t *p, *endp;
     AVBPrint dstbuf;
@@ -885,10 +801,10 @@ end:
 #define PRINT_STRING_OPT      1
 #define PRINT_STRING_VALIDATE 2
 
-static inline int writer_print_string(WriterContext *wctx,
+static inline int writer_print_string(AVTextFormatContext *wctx,
                                       const char *key, const char *val, int flags)
 {
-    const struct section *section = wctx->section[wctx->level];
+    const struct AVTextFormatSection *section = wctx->section[wctx->level];
     int ret = 0;
 
     if (show_optional_fields == SHOW_OPTIONAL_FIELDS_NEVER ||
@@ -923,7 +839,7 @@ static inline int writer_print_string(WriterContext *wctx,
     return ret;
 }
 
-static inline void writer_print_rational(WriterContext *wctx,
+static inline void writer_print_rational(AVTextFormatContext *wctx,
                                          const char *key, AVRational q, char sep)
 {
     AVBPrint buf;
@@ -932,7 +848,7 @@ static inline void writer_print_rational(WriterContext *wctx,
     writer_print_string(wctx, key, buf.str, 0);
 }
 
-static void writer_print_time(WriterContext *wctx, const char *key,
+static void writer_print_time(AVTextFormatContext *wctx, const char *key,
                               int64_t ts, const AVRational *time_base, int is_duration)
 {
     char buf[128];
@@ -949,7 +865,7 @@ static void writer_print_time(WriterContext *wctx, const char *key,
     }
 }
 
-static void writer_print_ts(WriterContext *wctx, const char *key, int64_t ts, int is_duration)
+static void writer_print_ts(AVTextFormatContext *wctx, const char *key, int64_t ts, int is_duration)
 {
     if ((!is_duration && ts == AV_NOPTS_VALUE) || (is_duration && ts == 0)) {
         writer_print_string(wctx, key, "N/A", PRINT_STRING_OPT);
@@ -958,7 +874,7 @@ static void writer_print_ts(WriterContext *wctx, const char *key, int64_t ts, in
     }
 }
 
-static void writer_print_data(WriterContext *wctx, const char *name,
+static void writer_print_data(AVTextFormatContext *wctx, const char *name,
                               const uint8_t *data, int size)
 {
     AVBPrint bp;
@@ -986,7 +902,7 @@ static void writer_print_data(WriterContext *wctx, const char *name,
     av_bprint_finalize(&bp, NULL);
 }
 
-static void writer_print_data_hash(WriterContext *wctx, const char *name,
+static void writer_print_data_hash(AVTextFormatContext *wctx, const char *name,
                                    const uint8_t *data, int size)
 {
     char *p, buf[AV_HASH_MAX_SIZE * 2 + 64] = { 0 };
@@ -1001,7 +917,7 @@ static void writer_print_data_hash(WriterContext *wctx, const char *name,
     writer_print_string(wctx, name, buf, 0);
 }
 
-static void writer_print_integers(WriterContext *wctx, const char *name,
+static void writer_print_integers(AVTextFormatContext *wctx, const char *name,
                                   uint8_t *data, int size, const char *format,
                                   int columns, int bytes, int offset_add)
 {
@@ -1033,9 +949,9 @@ static void writer_print_integers(WriterContext *wctx, const char *name,
 
 #define MAX_REGISTERED_WRITERS_NB 64
 
-static const Writer *registered_writers[MAX_REGISTERED_WRITERS_NB + 1];
+static const AVTextFormatter *registered_writers[MAX_REGISTERED_WRITERS_NB + 1];
 
-static int writer_register(const Writer *writer)
+static int writer_register(const AVTextFormatter *writer)
 {
     static int next_registered_writer_idx = 0;
 
@@ -1046,7 +962,7 @@ static int writer_register(const Writer *writer)
     return 0;
 }
 
-static const Writer *writer_get_by_name(const char *name)
+static const AVTextFormatter *writer_get_by_name(const char *name)
 {
     int i;
 
@@ -1103,12 +1019,12 @@ static inline char *upcase_string(char *dst, size_t dst_size, const char *src)
     return dst;
 }
 
-static void default_print_section_header(WriterContext *wctx, const void *data)
+static void default_print_section_header(AVTextFormatContext *wctx, const void *data)
 {
     DefaultContext *def = wctx->priv;
     char buf[32];
-    const struct section *section = wctx->section[wctx->level];
-    const struct section *parent_section = wctx->level ?
+    const struct AVTextFormatSection *section = wctx->section[wctx->level];
+    const struct AVTextFormatSection *parent_section = wctx->level ?
         wctx->section[wctx->level-1] : NULL;
 
     av_bprint_clear(&wctx->section_pbuf[wctx->level]);
@@ -1128,10 +1044,10 @@ static void default_print_section_header(WriterContext *wctx, const void *data)
         writer_printf(wctx, "[%s]\n", upcase_string(buf, sizeof(buf), section->name));
 }
 
-static void default_print_section_footer(WriterContext *wctx)
+static void default_print_section_footer(AVTextFormatContext *wctx)
 {
     DefaultContext *def = wctx->priv;
-    const struct section *section = wctx->section[wctx->level];
+    const struct AVTextFormatSection *section = wctx->section[wctx->level];
     char buf[32];
 
     if (def->noprint_wrappers || def->nested_section[wctx->level])
@@ -1141,7 +1057,7 @@ static void default_print_section_footer(WriterContext *wctx)
         writer_printf(wctx, "[/%s]\n", upcase_string(buf, sizeof(buf), section->name));
 }
 
-static void default_print_str(WriterContext *wctx, const char *key, const char *value)
+static void default_print_str(AVTextFormatContext *wctx, const char *key, const char *value)
 {
     DefaultContext *def = wctx->priv;
 
@@ -1150,7 +1066,7 @@ static void default_print_str(WriterContext *wctx, const char *key, const char *
     writer_printf(wctx, "%s\n", value);
 }
 
-static void default_print_int(WriterContext *wctx, const char *key, int64_t value)
+static void default_print_int(AVTextFormatContext *wctx, const char *key, int64_t value)
 {
     DefaultContext *def = wctx->priv;
 
@@ -1159,7 +1075,7 @@ static void default_print_int(WriterContext *wctx, const char *key, int64_t valu
     writer_printf(wctx, "%"PRId64"\n", value);
 }
 
-static const Writer default_writer = {
+static const AVTextFormatter default_writer = {
     .name                  = "default",
     .priv_size             = sizeof(DefaultContext),
     .print_section_header  = default_print_section_header,
@@ -1251,7 +1167,7 @@ static const AVOption compact_options[]= {
 
 DEFINE_WRITER_CLASS(compact);
 
-static av_cold int compact_init(WriterContext *wctx)
+static av_cold int compact_init(AVTextFormatContext *wctx)
 {
     CompactContext *compact = wctx->priv;
 
@@ -1273,11 +1189,11 @@ static av_cold int compact_init(WriterContext *wctx)
     return 0;
 }
 
-static void compact_print_section_header(WriterContext *wctx, const void *data)
+static void compact_print_section_header(AVTextFormatContext *wctx, const void *data)
 {
     CompactContext *compact = wctx->priv;
-    const struct section *section = wctx->section[wctx->level];
-    const struct section *parent_section = wctx->level ?
+    const struct AVTextFormatSection *section = wctx->section[wctx->level];
+    const struct AVTextFormatSection *parent_section = wctx->level ?
         wctx->section[wctx->level-1] : NULL;
     compact->terminate_line[wctx->level] = 1;
     compact->has_nested_elems[wctx->level] = 0;
@@ -1325,7 +1241,7 @@ static void compact_print_section_header(WriterContext *wctx, const void *data)
     }
 }
 
-static void compact_print_section_footer(WriterContext *wctx)
+static void compact_print_section_footer(AVTextFormatContext *wctx)
 {
     CompactContext *compact = wctx->priv;
 
@@ -1335,7 +1251,7 @@ static void compact_print_section_footer(WriterContext *wctx)
         writer_w8(wctx, '\n');
 }
 
-static void compact_print_str(WriterContext *wctx, const char *key, const char *value)
+static void compact_print_str(AVTextFormatContext *wctx, const char *key, const char *value)
 {
     CompactContext *compact = wctx->priv;
     AVBPrint buf;
@@ -1348,7 +1264,7 @@ static void compact_print_str(WriterContext *wctx, const char *key, const char *
     av_bprint_finalize(&buf, NULL);
 }
 
-static void compact_print_int(WriterContext *wctx, const char *key, int64_t value)
+static void compact_print_int(AVTextFormatContext *wctx, const char *key, int64_t value)
 {
     CompactContext *compact = wctx->priv;
 
@@ -1358,7 +1274,7 @@ static void compact_print_int(WriterContext *wctx, const char *key, int64_t valu
     writer_printf(wctx, "%"PRId64, value);
 }
 
-static const Writer compact_writer = {
+static const AVTextFormatter compact_formatter = {
     .name                 = "compact",
     .priv_size            = sizeof(CompactContext),
     .init                 = compact_init,
@@ -1389,7 +1305,7 @@ static const AVOption csv_options[] = {
 
 DEFINE_WRITER_CLASS(csv);
 
-static const Writer csv_writer = {
+static const AVTextFormatter csv_formatter = {
     .name                 = "csv",
     .priv_size            = sizeof(CompactContext),
     .init                 = compact_init,
@@ -1423,7 +1339,7 @@ static const AVOption flat_options[]= {
 
 DEFINE_WRITER_CLASS(flat);
 
-static av_cold int flat_init(WriterContext *wctx)
+static av_cold int flat_init(AVTextFormatContext *wctx)
 {
     FlatContext *flat = wctx->priv;
 
@@ -1470,12 +1386,12 @@ static const char *flat_escape_value_str(AVBPrint *dst, const char *src)
     return dst->str;
 }
 
-static void flat_print_section_header(WriterContext *wctx, const void *data)
+static void flat_print_section_header(AVTextFormatContext *wctx, const void *data)
 {
     FlatContext *flat = wctx->priv;
     AVBPrint *buf = &wctx->section_pbuf[wctx->level];
-    const struct section *section = wctx->section[wctx->level];
-    const struct section *parent_section = wctx->level ?
+    const struct AVTextFormatSection *section = wctx->section[wctx->level];
+    const struct AVTextFormatSection *parent_section = wctx->level ?
         wctx->section[wctx->level-1] : NULL;
 
     /* build section header */
@@ -1496,12 +1412,12 @@ static void flat_print_section_header(WriterContext *wctx, const void *data)
     }
 }
 
-static void flat_print_int(WriterContext *wctx, const char *key, int64_t value)
+static void flat_print_int(AVTextFormatContext *wctx, const char *key, int64_t value)
 {
     writer_printf(wctx, "%s%s=%"PRId64"\n", wctx->section_pbuf[wctx->level].str, key, value);
 }
 
-static void flat_print_str(WriterContext *wctx, const char *key, const char *value)
+static void flat_print_str(AVTextFormatContext *wctx, const char *key, const char *value)
 {
     FlatContext *flat = wctx->priv;
     AVBPrint buf;
@@ -1514,7 +1430,7 @@ static void flat_print_str(WriterContext *wctx, const char *key, const char *val
     av_bprint_finalize(&buf, NULL);
 }
 
-static const Writer flat_writer = {
+static const AVTextFormatter flat_formatter = {
     .name                  = "flat",
     .priv_size             = sizeof(FlatContext),
     .init                  = flat_init,
@@ -1570,12 +1486,12 @@ static char *ini_escape_str(AVBPrint *dst, const char *src)
     return dst->str;
 }
 
-static void ini_print_section_header(WriterContext *wctx, const void *data)
+static void ini_print_section_header(AVTextFormatContext *wctx, const void *data)
 {
     INIContext *ini = wctx->priv;
     AVBPrint *buf = &wctx->section_pbuf[wctx->level];
-    const struct section *section = wctx->section[wctx->level];
-    const struct section *parent_section = wctx->level ?
+    const struct AVTextFormatSection *section = wctx->section[wctx->level];
+    const struct AVTextFormatSection *parent_section = wctx->level ?
         wctx->section[wctx->level-1] : NULL;
 
     av_bprint_clear(buf);
@@ -1603,7 +1519,7 @@ static void ini_print_section_header(WriterContext *wctx, const void *data)
         writer_printf(wctx, "[%s]\n", buf->str);
 }
 
-static void ini_print_str(WriterContext *wctx, const char *key, const char *value)
+static void ini_print_str(AVTextFormatContext *wctx, const char *key, const char *value)
 {
     AVBPrint buf;
 
@@ -1614,12 +1530,12 @@ static void ini_print_str(WriterContext *wctx, const char *key, const char *valu
     av_bprint_finalize(&buf, NULL);
 }
 
-static void ini_print_int(WriterContext *wctx, const char *key, int64_t value)
+static void ini_print_int(AVTextFormatContext *wctx, const char *key, int64_t value)
 {
     writer_printf(wctx, "%s=%"PRId64"\n", key, value);
 }
 
-static const Writer ini_writer = {
+static const AVTextFormatter ini_formatter = {
     .name                  = "ini",
     .priv_size             = sizeof(INIContext),
     .print_section_header  = ini_print_section_header,
@@ -1649,7 +1565,7 @@ static const AVOption json_options[]= {
 
 DEFINE_WRITER_CLASS(json);
 
-static av_cold int json_init(WriterContext *wctx)
+static av_cold int json_init(AVTextFormatContext *wctx)
 {
     JSONContext *json = wctx->priv;
 
@@ -1681,12 +1597,12 @@ static const char *json_escape_str(AVBPrint *dst, const char *src, void *log_ctx
 
 #define JSON_INDENT() writer_printf(wctx, "%*c", json->indent_level * 4, ' ')
 
-static void json_print_section_header(WriterContext *wctx, const void *data)
+static void json_print_section_header(AVTextFormatContext *wctx, const void *data)
 {
     JSONContext *json = wctx->priv;
     AVBPrint buf;
-    const struct section *section = wctx->section[wctx->level];
-    const struct section *parent_section = wctx->level ?
+    const struct AVTextFormatSection *section = wctx->section[wctx->level];
+    const struct AVTextFormatSection *parent_section = wctx->level ?
         wctx->section[wctx->level-1] : NULL;
 
     if (wctx->level && wctx->nb_item[wctx->level-1])
@@ -1720,10 +1636,10 @@ static void json_print_section_header(WriterContext *wctx, const void *data)
     }
 }
 
-static void json_print_section_footer(WriterContext *wctx)
+static void json_print_section_footer(AVTextFormatContext *wctx)
 {
     JSONContext *json = wctx->priv;
-    const struct section *section = wctx->section[wctx->level];
+    const struct AVTextFormatSection *section = wctx->section[wctx->level];
 
     if (wctx->level == 0) {
         json->indent_level--;
@@ -1742,7 +1658,7 @@ static void json_print_section_footer(WriterContext *wctx)
     }
 }
 
-static inline void json_print_item_str(WriterContext *wctx,
+static inline void json_print_item_str(AVTextFormatContext *wctx,
                                        const char *key, const char *value)
 {
     AVBPrint buf;
@@ -1754,10 +1670,10 @@ static inline void json_print_item_str(WriterContext *wctx,
     av_bprint_finalize(&buf, NULL);
 }
 
-static void json_print_str(WriterContext *wctx, const char *key, const char *value)
+static void json_print_str(AVTextFormatContext *wctx, const char *key, const char *value)
 {
     JSONContext *json = wctx->priv;
-    const struct section *parent_section = wctx->level ?
+    const struct AVTextFormatSection *parent_section = wctx->level ?
         wctx->section[wctx->level-1] : NULL;
 
     if (wctx->nb_item[wctx->level] || (parent_section && parent_section->id == SECTION_ID_PACKETS_AND_FRAMES))
@@ -1767,10 +1683,10 @@ static void json_print_str(WriterContext *wctx, const char *key, const char *val
     json_print_item_str(wctx, key, value);
 }
 
-static void json_print_int(WriterContext *wctx, const char *key, int64_t value)
+static void json_print_int(AVTextFormatContext *wctx, const char *key, int64_t value)
 {
     JSONContext *json = wctx->priv;
-    const struct section *parent_section = wctx->level ?
+    const struct AVTextFormatSection *parent_section = wctx->level ?
         wctx->section[wctx->level-1] : NULL;
     AVBPrint buf;
 
@@ -1784,7 +1700,7 @@ static void json_print_int(WriterContext *wctx, const char *key, int64_t value)
     av_bprint_finalize(&buf, NULL);
 }
 
-static const Writer json_writer = {
+static const AVTextFormatter json_formatter = {
     .name                 = "json",
     .priv_size            = sizeof(JSONContext),
     .init                 = json_init,
@@ -1819,7 +1735,7 @@ static const AVOption xml_options[] = {
 
 DEFINE_WRITER_CLASS(xml);
 
-static av_cold int xml_init(WriterContext *wctx)
+static av_cold int xml_init(AVTextFormatContext *wctx)
 {
     XMLContext *xml = wctx->priv;
 
@@ -1842,11 +1758,11 @@ static av_cold int xml_init(WriterContext *wctx)
 
 #define XML_INDENT() writer_printf(wctx, "%*c", xml->indent_level * 4, ' ')
 
-static void xml_print_section_header(WriterContext *wctx, const void *data)
+static void xml_print_section_header(AVTextFormatContext *wctx, const void *data)
 {
     XMLContext *xml = wctx->priv;
-    const struct section *section = wctx->section[wctx->level];
-    const struct section *parent_section = wctx->level ?
+    const struct AVTextFormatSection *section = wctx->section[wctx->level];
+    const struct AVTextFormatSection *parent_section = wctx->level ?
         wctx->section[wctx->level-1] : NULL;
 
     if (wctx->level == 0) {
@@ -1888,10 +1804,10 @@ static void xml_print_section_header(WriterContext *wctx, const void *data)
     }
 }
 
-static void xml_print_section_footer(WriterContext *wctx)
+static void xml_print_section_footer(AVTextFormatContext *wctx)
 {
     XMLContext *xml = wctx->priv;
-    const struct section *section = wctx->section[wctx->level];
+    const struct AVTextFormatSection *section = wctx->section[wctx->level];
 
     if (wctx->level == 0) {
         writer_printf(wctx, "</%sffprobe>\n", xml->fully_qualified ? "ffprobe:" : "");
@@ -1905,12 +1821,12 @@ static void xml_print_section_footer(WriterContext *wctx)
     }
 }
 
-static void xml_print_value(WriterContext *wctx, const char *key,
+static void xml_print_value(AVTextFormatContext *wctx, const char *key,
                             const char *str, int64_t num, const int is_int)
 {
     AVBPrint buf;
     XMLContext *xml = wctx->priv;
-    const struct section *section = wctx->section[wctx->level];
+    const struct AVTextFormatSection *section = wctx->section[wctx->level];
 
     av_bprint_init(&buf, 1, AV_BPRINT_SIZE_UNLIMITED);
 
@@ -1947,16 +1863,16 @@ static void xml_print_value(WriterContext *wctx, const char *key,
     av_bprint_finalize(&buf, NULL);
 }
 
-static inline void xml_print_str(WriterContext *wctx, const char *key, const char *value) {
+static inline void xml_print_str(AVTextFormatContext *wctx, const char *key, const char *value) {
     xml_print_value(wctx, key, value, 0, 0);
 }
 
-static void xml_print_int(WriterContext *wctx, const char *key, int64_t value)
+static void xml_print_int(AVTextFormatContext *wctx, const char *key, int64_t value)
 {
     xml_print_value(wctx, key, NULL, value, 1);
 }
 
-static Writer xml_writer = {
+static AVTextFormatter xml_formatter = {
     .name                 = "xml",
     .priv_size            = sizeof(XMLContext),
     .init                 = xml_init,
@@ -2031,7 +1947,7 @@ static void writer_register_all(void)
     memset( (ptr) + (cur_n), 0, ((new_n) - (cur_n)) * sizeof(*(ptr)) ); \
 }
 
-static inline int show_tags(WriterContext *w, AVDictionary *tags, int section_id)
+static inline int show_tags(AVTextFormatContext *w, AVDictionary *tags, int section_id)
 {
     const AVDictionaryEntry *tag = NULL;
     int ret = 0;
@@ -2049,7 +1965,7 @@ static inline int show_tags(WriterContext *w, AVDictionary *tags, int section_id
     return ret;
 }
 
-static void print_dovi_metadata(WriterContext *w, const AVDOVIMetadata *dovi)
+static void print_dovi_metadata(AVTextFormatContext *w, const AVDOVIMetadata *dovi)
 {
     if (!dovi)
         return;
@@ -2211,7 +2127,7 @@ static void print_dovi_metadata(WriterContext *w, const AVDOVIMetadata *dovi)
     }
 }
 
-static void print_dynamic_hdr10_plus(WriterContext *w, const AVDynamicHDRPlus *metadata)
+static void print_dynamic_hdr10_plus(AVTextFormatContext *w, const AVDynamicHDRPlus *metadata)
 {
     if (!metadata)
         return;
@@ -2310,7 +2226,7 @@ static void print_dynamic_hdr10_plus(WriterContext *w, const AVDynamicHDRPlus *m
     }
 }
 
-static void print_dynamic_hdr_vivid(WriterContext *w, const AVDynamicHDRVivid *metadata)
+static void print_dynamic_hdr_vivid(AVTextFormatContext *w, const AVDynamicHDRVivid *metadata)
 {
     if (!metadata)
         return;
@@ -2380,7 +2296,7 @@ static void print_dynamic_hdr_vivid(WriterContext *w, const AVDynamicHDRVivid *m
     }
 }
 
-static void print_ambient_viewing_environment(WriterContext *w,
+static void print_ambient_viewing_environment(AVTextFormatContext *w,
                                               const AVAmbientViewingEnvironment *env)
 {
     if (!env)
@@ -2391,7 +2307,7 @@ static void print_ambient_viewing_environment(WriterContext *w,
     print_q("ambient_light_y",     env->ambient_light_y,     '/');
 }
 
-static void print_film_grain_params(WriterContext *w,
+static void print_film_grain_params(AVTextFormatContext *w,
                                     const AVFilmGrainParams *fgp)
 {
     const char *color_range, *color_primaries, *color_trc, *color_space;
@@ -2516,7 +2432,7 @@ static void print_film_grain_params(WriterContext *w,
     av_bprint_finalize(&pbuf, NULL);
 }
 
-static void print_pkt_side_data(WriterContext *w,
+static void print_pkt_side_data(AVTextFormatContext *w,
                                 AVCodecParameters *par,
                                 const AVPacketSideData *sd,
                                 SectionID id_data)
@@ -2638,7 +2554,7 @@ static void print_pkt_side_data(WriterContext *w,
         }
 }
 
-static void print_private_data(WriterContext *w, void *priv_data)
+static void print_private_data(AVTextFormatContext *w, void *priv_data)
 {
     const AVOption *opt = NULL;
     while (opt = av_opt_next(priv_data, opt)) {
@@ -2651,7 +2567,7 @@ static void print_private_data(WriterContext *w, void *priv_data)
     }
 }
 
-static void print_color_range(WriterContext *w, enum AVColorRange color_range)
+static void print_color_range(AVTextFormatContext *w, enum AVColorRange color_range)
 {
     const char *val = av_color_range_name(color_range);
     if (!val || color_range == AVCOL_RANGE_UNSPECIFIED) {
@@ -2661,7 +2577,7 @@ static void print_color_range(WriterContext *w, enum AVColorRange color_range)
     }
 }
 
-static void print_color_space(WriterContext *w, enum AVColorSpace color_space)
+static void print_color_space(AVTextFormatContext *w, enum AVColorSpace color_space)
 {
     const char *val = av_color_space_name(color_space);
     if (!val || color_space == AVCOL_SPC_UNSPECIFIED) {
@@ -2671,7 +2587,7 @@ static void print_color_space(WriterContext *w, enum AVColorSpace color_space)
     }
 }
 
-static void print_primaries(WriterContext *w, enum AVColorPrimaries color_primaries)
+static void print_primaries(AVTextFormatContext *w, enum AVColorPrimaries color_primaries)
 {
     const char *val = av_color_primaries_name(color_primaries);
     if (!val || color_primaries == AVCOL_PRI_UNSPECIFIED) {
@@ -2681,7 +2597,7 @@ static void print_primaries(WriterContext *w, enum AVColorPrimaries color_primar
     }
 }
 
-static void print_color_trc(WriterContext *w, enum AVColorTransferCharacteristic color_trc)
+static void print_color_trc(AVTextFormatContext *w, enum AVColorTransferCharacteristic color_trc)
 {
     const char *val = av_color_transfer_name(color_trc);
     if (!val || color_trc == AVCOL_TRC_UNSPECIFIED) {
@@ -2691,7 +2607,7 @@ static void print_color_trc(WriterContext *w, enum AVColorTransferCharacteristic
     }
 }
 
-static void print_chroma_location(WriterContext *w, enum AVChromaLocation chroma_location)
+static void print_chroma_location(AVTextFormatContext *w, enum AVChromaLocation chroma_location)
 {
     const char *val = av_chroma_location_name(chroma_location);
     if (!val || chroma_location == AVCHROMA_LOC_UNSPECIFIED) {
@@ -2717,7 +2633,7 @@ static void clear_log(int need_lock)
         ff_mutex_unlock(&log_mutex);
 }
 
-static int show_log(WriterContext *w, int section_ids, int section_id, int log_level)
+static int show_log(AVTextFormatContext *w, int section_ids, int section_id, int log_level)
 {
     int i;
     ff_mutex_lock(&log_mutex);
@@ -2752,7 +2668,7 @@ static int show_log(WriterContext *w, int section_ids, int section_id, int log_l
     return 0;
 }
 
-static void show_packet(WriterContext *w, InputFile *ifile, AVPacket *pkt, int packet_idx)
+static void show_packet(AVTextFormatContext *w, InputFile *ifile, AVPacket *pkt, int packet_idx)
 {
     char val_str[128];
     AVStream *st = ifile->streams[pkt->stream_index].st;
@@ -2810,7 +2726,7 @@ static void show_packet(WriterContext *w, InputFile *ifile, AVPacket *pkt, int p
     fflush(stdout);
 }
 
-static void show_subtitle(WriterContext *w, AVSubtitle *sub, AVStream *stream,
+static void show_subtitle(AVTextFormatContext *w, AVSubtitle *sub, AVStream *stream,
                           AVFormatContext *fmt_ctx)
 {
     AVBPrint pbuf;
@@ -2833,7 +2749,7 @@ static void show_subtitle(WriterContext *w, AVSubtitle *sub, AVStream *stream,
     fflush(stdout);
 }
 
-static void print_frame_side_data(WriterContext *w,
+static void print_frame_side_data(AVTextFormatContext *w,
                                   const AVFrame *frame,
                                   const AVStream *stream)
 {
@@ -2919,7 +2835,7 @@ static void print_frame_side_data(WriterContext *w,
     writer_print_section_footer(w);
 }
 
-static void show_frame(WriterContext *w, AVFrame *frame, AVStream *stream,
+static void show_frame(AVTextFormatContext *w, AVFrame *frame, AVStream *stream,
                        AVFormatContext *fmt_ctx)
 {
     FrameData *fd = frame->opaque_ref ? (FrameData*)frame->opaque_ref->data : NULL;
@@ -3007,7 +2923,7 @@ static void show_frame(WriterContext *w, AVFrame *frame, AVStream *stream,
     fflush(stdout);
 }
 
-static av_always_inline int process_frame(WriterContext *w,
+static av_always_inline int process_frame(AVTextFormatContext *w,
                                           InputFile *ifile,
                                           AVFrame *frame, const AVPacket *pkt,
                                           int *packet_new)
@@ -3104,7 +3020,7 @@ static void log_read_interval(const ReadInterval *interval, void *log_ctx, int l
     av_log(log_ctx, log_level, "\n");
 }
 
-static int read_interval_packets(WriterContext *w, InputFile *ifile,
+static int read_interval_packets(AVTextFormatContext *w, InputFile *ifile,
                                  const ReadInterval *interval, int64_t *cur_ts)
 {
     AVFormatContext *fmt_ctx = ifile->fmt_ctx;
@@ -3229,7 +3145,7 @@ end:
     return ret;
 }
 
-static int read_packets(WriterContext *w, InputFile *ifile)
+static int read_packets(AVTextFormatContext *w, InputFile *ifile)
 {
     AVFormatContext *fmt_ctx = ifile->fmt_ctx;
     int i, ret = 0;
@@ -3249,7 +3165,7 @@ static int read_packets(WriterContext *w, InputFile *ifile)
     return ret;
 }
 
-static void print_dispositions(WriterContext *w, uint32_t disposition, SectionID section_id)
+static void print_dispositions(AVTextFormatContext *w, uint32_t disposition, SectionID section_id)
 {
     writer_print_section_header(w, NULL, section_id);
     for (int i = 0; i < sizeof(disposition) * CHAR_BIT; i++) {
@@ -3264,7 +3180,7 @@ static void print_dispositions(WriterContext *w, uint32_t disposition, SectionID
 #define IN_PROGRAM 1
 #define IN_STREAM_GROUP 2
 
-static int show_stream(WriterContext *w, AVFormatContext *fmt_ctx, int stream_idx, InputStream *ist, int container)
+static int show_stream(AVTextFormatContext *w, AVFormatContext *fmt_ctx, int stream_idx, InputStream *ist, int container)
 {
     AVStream *stream = ist->st;
     AVCodecParameters *par;
@@ -3487,7 +3403,7 @@ static int show_stream(WriterContext *w, AVFormatContext *fmt_ctx, int stream_id
     return ret;
 }
 
-static int show_streams(WriterContext *w, InputFile *ifile)
+static int show_streams(AVTextFormatContext *w, InputFile *ifile)
 {
     AVFormatContext *fmt_ctx = ifile->fmt_ctx;
     int i, ret = 0;
@@ -3504,7 +3420,7 @@ static int show_streams(WriterContext *w, InputFile *ifile)
     return ret;
 }
 
-static int show_program(WriterContext *w, InputFile *ifile, AVProgram *program)
+static int show_program(AVTextFormatContext *w, InputFile *ifile, AVProgram *program)
 {
     AVFormatContext *fmt_ctx = ifile->fmt_ctx;
     int i, ret = 0;
@@ -3535,7 +3451,7 @@ end:
     return ret;
 }
 
-static int show_programs(WriterContext *w, InputFile *ifile)
+static int show_programs(AVTextFormatContext *w, InputFile *ifile)
 {
     AVFormatContext *fmt_ctx = ifile->fmt_ctx;
     int i, ret = 0;
@@ -3553,7 +3469,7 @@ static int show_programs(WriterContext *w, InputFile *ifile)
     return ret;
 }
 
-static void print_tile_grid_params(WriterContext *w, const AVStreamGroup *stg,
+static void print_tile_grid_params(AVTextFormatContext *w, const AVStreamGroup *stg,
                                    const AVStreamGroupTileGrid *tile_grid)
 {
     writer_print_section_header(w, stg, SECTION_ID_STREAM_GROUP_COMPONENT);
@@ -3576,7 +3492,7 @@ static void print_tile_grid_params(WriterContext *w, const AVStreamGroup *stg,
     writer_print_section_footer(w);
 }
 
-static void print_iamf_param_definition(WriterContext *w, const char *name,
+static void print_iamf_param_definition(AVTextFormatContext *w, const char *name,
                                         const AVIAMFParamDefinition *param, SectionID section_id)
 {
     SectionID subsection_id, parameter_section_id;
@@ -3631,7 +3547,7 @@ static void print_iamf_param_definition(WriterContext *w, const char *name,
     writer_print_section_footer(w); // section_id
 }
 
-static void print_iamf_audio_element_params(WriterContext *w, const AVStreamGroup *stg,
+static void print_iamf_audio_element_params(AVTextFormatContext *w, const AVStreamGroup *stg,
                                             const AVIAMFAudioElement *audio_element)
 {
     writer_print_section_header(w, stg, SECTION_ID_STREAM_GROUP_COMPONENT);
@@ -3662,7 +3578,7 @@ static void print_iamf_audio_element_params(WriterContext *w, const AVStreamGrou
     writer_print_section_footer(w); // SECTION_ID_STREAM_GROUP_COMPONENT
 }
 
-static void print_iamf_submix_params(WriterContext *w, const AVIAMFSubmix *submix)
+static void print_iamf_submix_params(AVTextFormatContext *w, const AVIAMFSubmix *submix)
 {
     writer_print_section_header(w, "IAMF Submix", SECTION_ID_STREAM_GROUP_SUBCOMPONENT);
     print_int("nb_elements",    submix->nb_elements);
@@ -3709,7 +3625,7 @@ static void print_iamf_submix_params(WriterContext *w, const AVIAMFSubmix *submi
     writer_print_section_footer(w); // SECTION_ID_STREAM_GROUP_SUBCOMPONENT
 }
 
-static void print_iamf_mix_presentation_params(WriterContext *w, const AVStreamGroup *stg,
+static void print_iamf_mix_presentation_params(AVTextFormatContext *w, const AVStreamGroup *stg,
                                                const AVIAMFMixPresentation *mix_presentation)
 {
     writer_print_section_header(w, stg, SECTION_ID_STREAM_GROUP_COMPONENT);
@@ -3728,7 +3644,7 @@ static void print_iamf_mix_presentation_params(WriterContext *w, const AVStreamG
     writer_print_section_footer(w); // SECTION_ID_STREAM_GROUP_COMPONENT
 }
 
-static void print_stream_group_params(WriterContext *w, AVStreamGroup *stg)
+static void print_stream_group_params(AVTextFormatContext *w, AVStreamGroup *stg)
 {
     writer_print_section_header(w, NULL, SECTION_ID_STREAM_GROUP_COMPONENTS);
     if (stg->type == AV_STREAM_GROUP_PARAMS_TILE_GRID)
@@ -3740,7 +3656,7 @@ static void print_stream_group_params(WriterContext *w, AVStreamGroup *stg)
     writer_print_section_footer(w); // SECTION_ID_STREAM_GROUP_COMPONENTS
 }
 
-static int show_stream_group(WriterContext *w, InputFile *ifile, AVStreamGroup *stg)
+static int show_stream_group(AVTextFormatContext *w, InputFile *ifile, AVStreamGroup *stg)
 {
     AVFormatContext *fmt_ctx = ifile->fmt_ctx;
     AVBPrint pbuf;
@@ -3784,7 +3700,7 @@ end:
     return ret;
 }
 
-static int show_stream_groups(WriterContext *w, InputFile *ifile)
+static int show_stream_groups(AVTextFormatContext *w, InputFile *ifile)
 {
     AVFormatContext *fmt_ctx = ifile->fmt_ctx;
     int i, ret = 0;
@@ -3801,7 +3717,7 @@ static int show_stream_groups(WriterContext *w, InputFile *ifile)
     return ret;
 }
 
-static int show_chapters(WriterContext *w, InputFile *ifile)
+static int show_chapters(AVTextFormatContext *w, InputFile *ifile)
 {
     AVFormatContext *fmt_ctx = ifile->fmt_ctx;
     int i, ret = 0;
@@ -3826,7 +3742,7 @@ static int show_chapters(WriterContext *w, InputFile *ifile)
     return ret;
 }
 
-static int show_format(WriterContext *w, InputFile *ifile)
+static int show_format(AVTextFormatContext *w, InputFile *ifile)
 {
     AVFormatContext *fmt_ctx = ifile->fmt_ctx;
     char val_str[128];
@@ -3858,7 +3774,7 @@ static int show_format(WriterContext *w, InputFile *ifile)
     return ret;
 }
 
-static void show_error(WriterContext *w, int err)
+static void show_error(AVTextFormatContext *w, int err)
 {
     writer_print_section_header(w, NULL, SECTION_ID_ERROR);
     print_int("code", err);
@@ -4005,7 +3921,7 @@ static void close_input_file(InputFile *ifile)
     avformat_close_input(&ifile->fmt_ctx);
 }
 
-static int probe_file(WriterContext *wctx, const char *filename,
+static int probe_file(AVTextFormatContext *wctx, const char *filename,
                       const char *print_filename)
 {
     InputFile ifile = { 0 };
@@ -4103,7 +4019,7 @@ static void show_usage(void)
     av_log(NULL, AV_LOG_INFO, "\n");
 }
 
-static void ffprobe_show_program_version(WriterContext *w)
+static void ffprobe_show_program_version(AVTextFormatContext *w)
 {
     AVBPrint pbuf;
     av_bprint_init(&pbuf, 1, AV_BPRINT_SIZE_UNLIMITED);
@@ -4134,7 +4050,7 @@ static void ffprobe_show_program_version(WriterContext *w)
         }                                                               \
     } while (0)
 
-static void ffprobe_show_library_versions(WriterContext *w)
+static void ffprobe_show_library_versions(AVTextFormatContext *w)
 {
     writer_print_section_header(w, NULL, SECTION_ID_LIBRARY_VERSIONS);
     SHOW_LIB_VERSION(avutil,     AVUTIL);
@@ -4153,7 +4069,7 @@ static void ffprobe_show_library_versions(WriterContext *w)
         print_int(name, !!(pixdesc->flags & AV_PIX_FMT_FLAG_##flagname)); \
     } while (0)
 
-static void ffprobe_show_pixel_formats(WriterContext *w)
+static void ffprobe_show_pixel_formats(AVTextFormatContext *w)
 {
     const AVPixFmtDescriptor *pixdesc = NULL;
     int i, n;
@@ -4229,11 +4145,11 @@ static int opt_format(void *optctx, const char *opt, const char *arg)
 static inline void mark_section_show_entries(SectionID section_id,
                                              int show_all_entries, AVDictionary *entries)
 {
-    struct section *section = &sections[section_id];
+    struct AVTextFormatSection *section = &sections[section_id];
 
     section->show_all_entries = show_all_entries;
     if (show_all_entries) {
-        for (const SectionID *id = section->children_ids; *id != -1; id++)
+        for (const int *id = section->children_ids; *id != -1; id++)
             mark_section_show_entries(*id, show_all_entries, entries);
     } else {
         av_dict_copy(&section->entries_to_show, entries, 0);
@@ -4246,7 +4162,7 @@ static int match_section(const char *section_name,
     int i, ret = 0;
 
     for (i = 0; i < FF_ARRAY_ELEMS(sections); i++) {
-        const struct section *section = &sections[i];
+        const struct AVTextFormatSection *section = &sections[i];
         if (!strcmp(section_name, section->name) ||
             (section->unique_name && !strcmp(section_name, section->unique_name))) {
             av_log(NULL, AV_LOG_DEBUG,
@@ -4518,8 +4434,8 @@ static int opt_pretty(void *optctx, const char *opt, const char *arg)
 
 static void print_section(SectionID id, int level)
 {
-    const SectionID *pid;
-    const struct section *section = &sections[id];
+    const int *pid;
+    const struct AVTextFormatSection *section = &sections[id];
     printf("%c%c%c%c",
            section->flags & SECTION_FLAG_IS_WRAPPER           ? 'W' : '.',
            section->flags & SECTION_FLAG_IS_ARRAY             ? 'A' : '.',
@@ -4627,10 +4543,10 @@ static const OptionDef real_options[] = {
 
 static inline int check_section_show_entries(int section_id)
 {
-    struct section *section = &sections[section_id];
+    struct AVTextFormatSection *section = &sections[section_id];
     if (sections[section_id].show_all_entries || sections[section_id].entries_to_show)
         return 1;
-    for (const SectionID *id = section->children_ids; *id != -1; id++)
+    for (const int *id = section->children_ids; *id != -1; id++)
         if (check_section_show_entries(*id))
             return 1;
     return 0;
@@ -4643,8 +4559,8 @@ static inline int check_section_show_entries(int section_id)
 
 int main(int argc, char **argv)
 {
-    const Writer *w;
-    WriterContext *wctx;
+    const AVTextFormatter *w;
+    AVTextFormatContext *wctx;
     char *buf;
     char *w_name = NULL, *w_args = NULL;
     int ret, input_ret, i;
@@ -4749,7 +4665,7 @@ int main(int argc, char **argv)
 
     if ((ret = writer_open(&wctx, w, w_args,
                            sections, FF_ARRAY_ELEMS(sections), output_filename)) >= 0) {
-        if (w == &xml_writer)
+        if (w == &xml_formatter)
             wctx->string_validation_utf8_flags |= AV_UTF8_FLAG_EXCLUDE_XML_INVALID_CONTROL_CODES;
 
         writer_print_section_header(wctx, NULL, SECTION_ID_ROOT);

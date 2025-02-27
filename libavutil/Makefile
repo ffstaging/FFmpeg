@@ -9,6 +9,7 @@ HEADERS = adler32.h                                                     \
           audio_fifo.h                                                  \
           avassert.h                                                    \
           avstring.h                                                    \
+          avtextformat.h                                                \
           avutil.h                                                      \
           base64.h                                                      \
           blowfish.h                                                    \

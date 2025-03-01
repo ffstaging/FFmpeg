@@ -19,8 +19,19 @@ OBJS-ffmpeg +=                  \
     fftools/ffmpeg_mux_init.o   \
     fftools/ffmpeg_opt.o        \
     fftools/ffmpeg_sched.o      \
+    fftools/ffmpeg_graphprint.o \
     fftools/sync_queue.o        \
     fftools/thread_queue.o      \
+    fftools/textformat/avtextformat.o \
+    fftools/textformat/tf_compact.o   \
+    fftools/textformat/tf_default.o   \
+    fftools/textformat/tf_flat.o      \
+    fftools/textformat/tf_ini.o       \
+    fftools/textformat/tf_json.o      \
+    fftools/textformat/tf_xml.o       \
+    fftools/textformat/tw_avio.o      \
+    fftools/textformat/tw_buffer.o    \
+    fftools/textformat/tw_stdout.o    \
 
 OBJS-ffprobe +=                       \
     fftools/textformat/avtextformat.o \

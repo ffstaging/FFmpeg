@@ -4652,6 +4652,7 @@ int main(int argc, char **argv)
     init_dynload();
 
     av_log_set_flags(AV_LOG_SKIP_REPEATED);
+    init_logformatting();
 
     options = real_options;
     parse_loglevel(argc, argv, options);

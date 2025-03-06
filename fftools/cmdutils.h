@@ -402,6 +402,11 @@ int split_commandline(OptionParseContext *octx, int argc, char *argv[],
 void uninit_parse_context(OptionParseContext *octx);
 
 /**
+ * Sets up formatting callbacks for logging
+ */
+void init_logformatting(void);
+
+/**
  * Find the '-loglevel' option in the command line args and apply it.
  */
 void parse_loglevel(int argc, char **argv, const OptionDef *options);

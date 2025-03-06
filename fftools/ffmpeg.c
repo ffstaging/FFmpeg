@@ -955,6 +955,7 @@ int main(int argc, char **argv)
     setvbuf(stderr,NULL,_IONBF,0); /* win32 runtime needs this */
 
     av_log_set_flags(AV_LOG_SKIP_REPEATED);
+    init_logformatting();
     parse_loglevel(argc, argv, options);
 
 #if CONFIG_AVDEVICE

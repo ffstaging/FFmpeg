@@ -59,6 +59,56 @@ AVDictionary *format_opts, *codec_opts;
 
 int hide_banner = 0;
 
+static int nb_class_ids;
+
+#define NB_CLASS_IDS 1000
+static struct class_ids {
+    void *avcl;
+    uint64_t class_hash;
+    unsigned id;
+} class_ids[NB_CLASS_IDS];
+
+static uint64_t fnv_hash(const char *str)
+{
+    // FNV-1a 64-bit hash algorithm
+    uint64_t hash = 0xcbf29ce484222325ULL;
+    while (*str) {
+        hash ^= (unsigned char)*str++;
+        hash *= 0x100000001b3ULL;
+    }
+    return hash;
+}
+
+static unsigned get_class_id(void* avcl)
+{
+    AVClass* avc = avcl ? *(AVClass **) avcl : NULL;
+    const char* class_name = avc->item_name(avcl);
+    unsigned i, nb_ids = 0;
+    uint64_t class_hash;
+
+    for (i = 0; i < NB_CLASS_IDS && class_ids[i].avcl; i++) {
+        if (class_ids[i].avcl == avcl)
+            return class_ids[i].id;
+    }
+
+    class_hash = fnv_hash(avc->class_name);
+
+    for (i = 0; i < NB_CLASS_IDS; i++) {
+        if (class_ids[i].class_hash == class_hash)
+            nb_ids++;
+
+        if (!class_ids[i].avcl) {
+            class_ids[i].avcl = avcl;
+            class_ids[i].class_hash = class_hash;
+            class_ids[i].id = nb_ids;
+            return class_ids[i].id;
+        }
+    }
+
+    // exceeded NB_CLASS_IDS entries in class_ids[]
+    return 0;
+}
+
 void uninit_opts(void)
 {
     av_dict_free(&swr_opts);
@@ -548,6 +598,25 @@ static void check_options(const OptionDef *po)
 
         po++;
     }
+}
+
+static const char *item_name(void *obj, const AVClass *cls)
+{
+    return (cls->item_name ? cls->item_name : av_default_item_name)(obj);
+}
+
+static void log_formatprefix_callback(AVBPrint* buffer, AVClass** avcl, int log_flags)
+{
+    const int print_mem = log_flags & AV_LOG_PRINT_MEMADDRESSES;
+    if (print_mem)
+        av_bprintf(buffer+0, "[%s @ %p] ", item_name(avcl, *avcl), avcl);
+    else
+        av_bprintf(buffer+0, "[%s #%u] ", item_name(avcl, *avcl), get_class_id(avcl));
+}
+
+void init_logformatting(void)
+{
+    av_log_set_formatprefix_callback(&log_formatprefix_callback);
 }
 
 void parse_loglevel(int argc, char **argv, const OptionDef *options)

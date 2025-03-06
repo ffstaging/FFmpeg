@@ -24,6 +24,7 @@
 #include <stdarg.h>
 #include "attributes.h"
 #include "version.h"
+#include "bprint.h"
 
 typedef enum {
     AV_CLASS_CATEGORY_NA = 0,
@@ -324,6 +325,29 @@ int av_log_get_level(void);
 void av_log_set_level(int level);
 
 /**
+ * Set the prefix formatting callback
+ *
+ * @note The callback must be thread safe, even if the application does not use
+ *       threads itself as some codecs are multithreaded.
+ *
+ * @see av_log_formatprefix_default_callback
+ *
+ * @param callback A formatting function with a compatible signature.
+ */
+void av_log_set_formatprefix_callback(void (*callback)(AVBPrint* buffer, AVClass** avcl, int log_flags));
+
+/**
+ * Default prefix formatting callback
+ *
+ * It prints the message to stderr, optionally colorizing it.
+ *
+ * @param buffer A pointer to the print buffer.
+ * @param avcl The AVClass reference for which to format the prefix.
+ * @param log_flags The enabled logging flags
+ */
+void av_log_formatprefix_default_callback(AVBPrint* buffer, AVClass** avcl, int log_flags);
+
+/**
  * Set the logging callback
  *
  * @note The callback must be thread safe, even if the application does not use
@@ -415,6 +439,11 @@ int av_log_format_line2(void *ptr, int level, const char *fmt, va_list vl,
  * Include system date and time in log output.
  */
 #define AV_LOG_PRINT_DATETIME 8
+
+/**
+ * Print memory addresses instead of logical ids in the AVClass prefix.
+ */
+#define AV_LOG_PRINT_MEMADDRESSES 16
 
 void av_log_set_flags(int arg);
 int av_log_get_flags(void);

@@ -315,6 +315,14 @@ static void format_date_now(AVBPrint* bp_time, int include_date)
     }
 }
 
+void av_log_formatprefix_default_callback(AVBPrint* buffer, AVClass** avcl, int log_flags)
+{
+    av_bprintf(buffer+0, "[%s @ %p] ", item_name(avcl, *avcl), avcl);
+}
+
+static void (*av_log_formatprefix_callback)(AVBPrint* part, AVClass** avcl, int log_flags) =
+    av_log_formatprefix_default_callback;
+
 static void format_line(void *avcl, int level, const char *fmt, va_list vl,
                         AVBPrint part[5], int *print_prefix, int type[2])
 {
@@ -327,17 +335,16 @@ static void format_line(void *avcl, int level, const char *fmt, va_list vl,
 
     if(type) type[0] = type[1] = AV_CLASS_CATEGORY_NA + 16;
     if (*print_prefix && avc) {
+
         if (avc->parent_log_context_offset) {
-            AVClass** parent = *(AVClass ***) (((uint8_t *) avcl) +
-                                   avc->parent_log_context_offset);
+            AVClass** parent = *(AVClass ***) ((uint8_t *)avcl + avc->parent_log_context_offset);
             if (parent && *parent) {
-                av_bprintf(part+0, "[%s @ %p] ",
-                           item_name(parent, *parent), parent);
+                av_log_formatprefix_callback(part, parent, flags);
                 if(type) type[0] = get_category(parent);
             }
         }
-        av_bprintf(part+1, "[%s @ %p] ",
-                   item_name(avcl, avc), avcl);
+        av_log_formatprefix_callback(part, avcl, flags);
+
         if(type) type[1] = get_category(avcl);
     }
 
@@ -483,6 +490,11 @@ void av_log_set_flags(int arg)
 int av_log_get_flags(void)
 {
     return flags;
+}
+
+void av_log_set_formatprefix_callback(void (*callback)(AVBPrint* buffer, AVClass** avcl, int log_flags))
+{
+    av_log_formatprefix_callback = callback;
 }
 
 void av_log_set_callback(void (*callback)(void*, int, const char*, va_list))

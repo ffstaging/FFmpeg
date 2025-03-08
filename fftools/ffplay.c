@@ -57,6 +57,7 @@
 #include "cmdutils.h"
 #include "ffplay_renderer.h"
 #include "opt_common.h"
+#include "fftools_log.h"
 
 const char program_name[] = "ffplay";
 const int program_birth_year = 2003;
@@ -3762,6 +3763,7 @@ int main(int argc, char **argv)
     init_dynload();
 
     av_log_set_flags(AV_LOG_SKIP_REPEATED);
+    init_logging();
     parse_loglevel(argc, argv, options);
 
     /* register all codecs, demux and protocols */

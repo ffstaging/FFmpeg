@@ -81,6 +81,7 @@
 #include "ffmpeg.h"
 #include "ffmpeg_sched.h"
 #include "ffmpeg_utils.h"
+#include "fftools_log.h"
 
 const char program_name[] = "ffmpeg";
 const int program_birth_year = 2000;
@@ -955,6 +956,7 @@ int main(int argc, char **argv)
     setvbuf(stderr,NULL,_IONBF,0); /* win32 runtime needs this */
 
     av_log_set_flags(AV_LOG_SKIP_REPEATED);
+    init_logging();
     parse_loglevel(argc, argv, options);
 
 #if CONFIG_AVDEVICE

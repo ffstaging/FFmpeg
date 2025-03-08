@@ -68,6 +68,7 @@
 #include "libavfilter/version.h"
 #include "cmdutils.h"
 #include "opt_common.h"
+#include "fftools_log.h"
 
 #include "libavutil/thread.h"
 
@@ -4652,6 +4653,7 @@ int main(int argc, char **argv)
     init_dynload();
 
     av_log_set_flags(AV_LOG_SKIP_REPEATED);
+    init_logging();
 
     options = real_options;
     parse_loglevel(argc, argv, options);

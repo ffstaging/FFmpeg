@@ -36,11 +36,9 @@
 
 #include "libavutil/bprint.h"
 #include "libavutil/common.h"
-//#include "libavutil/internal.h"
 #include "libavutil/log.h"
 #include "libavutil/thread.h"
 #include "libavutil/time.h"
-//#include "libavutil/time_internal.h"
 
 #include "fftools_log.h"
 

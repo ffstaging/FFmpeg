@@ -1,5 +1,5 @@
 /*
- * ffmpeg filter configuration
+ * Copyright (c) The FFmpeg developers
  *
  * This file is part of FFmpeg.
  *

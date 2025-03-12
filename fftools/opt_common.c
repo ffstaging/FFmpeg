@@ -25,6 +25,7 @@
 #include "cmdutils.h"
 #include "opt_common.h"
 
+#include "fftools_log.h"
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
@@ -1203,7 +1204,7 @@ int init_report(const char *env, FILE **file)
         return AVERROR(ENOMEM);
     }
 
-    prog_loglevel = av_log_get_level();
+    prog_loglevel = ff_log_get_level();
     if (!envlevel)
         report_file_level = FFMAX(report_file_level, prog_loglevel);
 
@@ -1265,8 +1266,8 @@ int opt_loglevel(void *optctx, const char *opt, const char *arg)
     };
     const char *token;
     char *tail;
-    int flags = av_log_get_flags();
-    int level = av_log_get_level();
+    int flags = ff_log_get_flags();
+    int level = ff_log_get_level();
     int cmd, i = 0;
 
     av_assert0(arg);
@@ -1282,27 +1283,27 @@ int opt_loglevel(void *optctx, const char *opt, const char *arg)
         }
         if (av_strstart(token, "repeat", &arg)) {
             if (cmd == '-') {
-                flags |= AV_LOG_SKIP_REPEATED;
+                flags |= FF_LOG_SKIP_REPEATED;
             } else {
-                flags &= ~AV_LOG_SKIP_REPEATED;
+                flags &= ~FF_LOG_SKIP_REPEATED;
             }
         } else if (av_strstart(token, "level", &arg)) {
             if (cmd == '-') {
-                flags &= ~AV_LOG_PRINT_LEVEL;
+                flags &= ~FF_LOG_PRINT_LEVEL;
             } else {
-                flags |= AV_LOG_PRINT_LEVEL;
+                flags |= FF_LOG_PRINT_LEVEL;
             }
         } else if (av_strstart(token, "time", &arg)) {
             if (cmd == '-') {
-                flags &= ~AV_LOG_PRINT_TIME;
+                flags &= ~FF_LOG_PRINT_TIME;
             } else {
-                flags |= AV_LOG_PRINT_TIME;
+                flags |= FF_LOG_PRINT_TIME;
             }
         } else if (av_strstart(token, "datetime", &arg)) {
             if (cmd == '-') {
-                flags &= ~AV_LOG_PRINT_DATETIME;
+                flags &= ~FF_LOG_PRINT_DATETIME;
             } else {
-                flags |= AV_LOG_PRINT_DATETIME;
+                flags |= FF_LOG_PRINT_DATETIME;
             }
         } else {
             break;
@@ -1314,7 +1315,7 @@ int opt_loglevel(void *optctx, const char *opt, const char *arg)
     } else if (*arg == '+') {
         arg++;
     } else if (!i) {
-        flags = av_log_get_flags();  /* level value without prefix, reset flags */
+        flags = ff_log_get_flags();  /* level value without prefix, reset flags */
     }
 
     for (i = 0; i < FF_ARRAY_ELEMS(log_levels); i++) {
@@ -1339,8 +1340,8 @@ int opt_loglevel(void *optctx, const char *opt, const char *arg)
     }
 
 end:
-    av_log_set_flags(flags);
-    av_log_set_level(level);
+    ff_log_set_flags(flags);
+    ff_log_set_level(level);
     return 0;
 }
 
@@ -1436,9 +1437,9 @@ int show_sources(void *optctx, const char *opt, const char *arg)
     char *dev = NULL;
     AVDictionary *opts = NULL;
     int ret = 0;
-    int error_level = av_log_get_level();
+    int error_level = ff_log_get_level();
 
-    av_log_set_level(AV_LOG_WARNING);
+    ff_log_set_level(AV_LOG_WARNING);
 
     if ((ret = show_sinks_sources_parse_arg(arg, &dev, &opts)) < 0)
         goto fail;
@@ -1464,7 +1465,7 @@ int show_sources(void *optctx, const char *opt, const char *arg)
   fail:
     av_dict_free(&opts);
     av_free(dev);
-    av_log_set_level(error_level);
+    ff_log_set_level(error_level);
     return ret;
 }
 
@@ -1474,9 +1475,9 @@ int show_sinks(void *optctx, const char *opt, const char *arg)
     char *dev = NULL;
     AVDictionary *opts = NULL;
     int ret = 0;
-    int error_level = av_log_get_level();
+    int error_level = ff_log_get_level();
 
-    av_log_set_level(AV_LOG_WARNING);
+    ff_log_set_level(AV_LOG_WARNING);
 
     if ((ret = show_sinks_sources_parse_arg(arg, &dev, &opts)) < 0)
         goto fail;
@@ -1500,7 +1501,7 @@ int show_sinks(void *optctx, const char *opt, const char *arg)
   fail:
     av_dict_free(&opts);
     av_free(dev);
-    av_log_set_level(error_level);
+    ff_log_set_level(error_level);
     return ret;
 }
 #endif /* CONFIG_AVDEVICE */

@@ -398,10 +398,12 @@ static char *value_string(AVTextFormatContext *tctx, char *buf, int buf_size, st
             vali = vald;
         }
 
-        if (show_float || (tctx->use_value_prefix && vald != (int64_t)vald))
+        if (show_float || (tctx->use_value_prefix && vald != (int64_t)vald)) {
             snprintf(buf, buf_size, "%f", vald);
-        else
+        } else {
             snprintf(buf, buf_size, "%"PRId64, vali);
+        }
+
         av_strlcatf(buf, buf_size, "%s%s%s", *prefix_string || tctx->show_value_unit ? " " : "",
                  prefix_string, tctx->show_value_unit ? uv.unit : "");
     }

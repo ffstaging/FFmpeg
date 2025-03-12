@@ -86,17 +86,17 @@ typedef struct AVTextFormatter {
 #define SECTION_MAX_NB_SECTIONS 100
 
 struct AVTextFormatContext {
-    const AVClass *class;           ///< class of the formatter
-    const AVTextFormatter *formatter;           ///< the AVTextFormatter of which this is an instance
-    AVTextWriterContext *writer;           ///< the AVTextWriterContext 
+    const AVClass *class;              ///< class of the formatter
+    const AVTextFormatter *formatter;  ///< the AVTextFormatter of which this is an instance
+    AVTextWriterContext *writer;       ///< the AVTextWriterContext
 
-    char *name;                     ///< name of this formatter instance
-    void *priv;                     ///< private data for use by the filter
+    char *name;                        ///< name of this formatter instance
+    void *priv;                        ///< private data for use by the filter
 
     const struct AVTextFormatSection *sections; ///< array containing all sections
-    int nb_sections;                ///< number of sections
+    int nb_sections;                  ///< number of sections
 
-    int level;                      ///< current level, starting from 0
+    int level;                        ///< current level, starting from 0
 
     /** number of the item printed in the given section, starting from 0 */
     unsigned int nb_item[SECTION_MAX_NB_LEVELS];
@@ -155,7 +155,7 @@ void avtext_print_data(AVTextFormatContext *tctx, const char *name, const uint8_
 
 void avtext_print_data_hash(AVTextFormatContext *tctx, const char *name, const uint8_t *data, int size);
 
-void avtext_print_integers(AVTextFormatContext *tctx, const char *name, uint8_t *data, int size, 
+void avtext_print_integers(AVTextFormatContext *tctx, const char *name, uint8_t *data, int size,
                            const char *format, int columns, int bytes, int offset_add);
 
 const AVTextFormatter *avtext_get_formatter_by_name(const char *name);

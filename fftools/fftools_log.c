@@ -59,6 +59,53 @@ static inline struct tm *ff_localtime_r(const time_t* clock, struct tm *result)
 #define localtime_r ff_localtime_r
 #endif
 
+#define MAX_CLASS_IDS 1000
+static struct class_ids {
+    void *avcl;
+    uint64_t class_hash;
+    unsigned id;
+} class_ids[MAX_CLASS_IDS];
+
+static uint64_t fnv_hash(const char *str)
+{
+    // FNV-1a 64-bit hash algorithm
+    uint64_t hash = 0xcbf29ce484222325ULL;
+    while (*str) {
+        hash ^= (unsigned char)*str++;
+        hash *= 0x100000001b3ULL;
+    }
+    return hash;
+}
+
+static unsigned get_class_id(void* avcl)
+{
+    AVClass* avc = avcl ? *(AVClass **) avcl : NULL;
+    unsigned i, nb_ids = 0;
+    uint64_t class_hash;
+
+    for (i = 0; i < MAX_CLASS_IDS && class_ids[i].avcl; i++) {
+        if (class_ids[i].avcl == avcl)
+            return class_ids[i].id;
+    }
+
+    class_hash = fnv_hash(avc->class_name);
+
+    for (i = 0; i < MAX_CLASS_IDS; i++) {
+        if (class_ids[i].class_hash == class_hash)
+            nb_ids++;
+
+        if (!class_ids[i].avcl) {
+            class_ids[i].avcl = avcl;
+            class_ids[i].class_hash = class_hash;
+            class_ids[i].id = nb_ids;
+            return class_ids[i].id;
+        }
+    }
+
+    // exceeded MAX_CLASS_IDS entries in class_ids[]
+    return 0;
+}
+
 static AVMutex mutex = AV_MUTEX_INITIALIZER;
 
 #define LINE_SZ 1024
@@ -316,6 +363,15 @@ static void format_date_now(AVBPrint* bp_time, int include_date)
     }
 }
 
+static void log_formatprefix(AVBPrint* buffer, AVClass** avcl)
+{
+    const int print_mem = ff_log_flags & FF_LOG_PRINT_MEMADDRESSES;
+    if (print_mem)
+        av_bprintf(buffer+0, "[%s @ %p] ", item_name(avcl, *avcl), avcl);
+    else
+        av_bprintf(buffer+0, "[%s #%u] ", item_name(avcl, *avcl), get_class_id(avcl));
+}
+
 static void format_line(void *avcl, int level, const char *fmt, va_list vl,
                         AVBPrint part[5], int *print_prefix, int type[2])
 {
@@ -328,17 +384,16 @@ static void format_line(void *avcl, int level, const char *fmt, va_list vl,
 
     if(type) type[0] = type[1] = AV_CLASS_CATEGORY_NA + 16;
     if (*print_prefix && avc) {
+
         if (avc->parent_log_context_offset) {
-            AVClass** parent = *(AVClass ***) (((uint8_t *) avcl) +
-                                   avc->parent_log_context_offset);
+            AVClass** parent = *(AVClass ***) ((uint8_t *)avcl + avc->parent_log_context_offset);
             if (parent && *parent) {
-                av_bprintf(part+0, "[%s @ %p] ",
-                           item_name(parent, *parent), parent);
+                log_formatprefix(part, parent);
                 if(type) type[0] = get_category(parent);
             }
         }
-        av_bprintf(part+1, "[%s @ %p] ",
-                   item_name(avcl, avc), avcl);
+        log_formatprefix(part, avcl);
+
         if(type) type[1] = get_category(avcl);
     }
 

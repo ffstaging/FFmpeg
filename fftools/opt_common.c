@@ -1305,6 +1305,12 @@ int opt_loglevel(void *optctx, const char *opt, const char *arg)
             } else {
                 flags |= FF_LOG_PRINT_DATETIME;
             }
+        } else if (av_strstart(token, "memaddresses", &arg)) {
+            if (cmd == '-') {
+                flags &= ~FF_LOG_PRINT_MEMADDRESSES;
+            } else {
+                flags |= FF_LOG_PRINT_MEMADDRESSES;
+            }
         } else {
             break;
         }

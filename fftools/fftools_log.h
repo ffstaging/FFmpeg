@@ -92,5 +92,10 @@ int ff_log_get_flags(void);
  */
 #define FF_LOG_PRINT_DATETIME 8
 
+/**
+ * Print memory addresses instead of logical ids in the AVClass prefix.
+ */
+#define FF_LOG_PRINT_MEMADDRESSES 16
+
 
 #endif /* FFTOOLS_FFTOOLS_LOG_H */

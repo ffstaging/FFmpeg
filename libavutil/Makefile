@@ -9,6 +9,8 @@ HEADERS = adler32.h                                                     \
           audio_fifo.h                                                  \
           avassert.h                                                    \
           avstring.h                                                    \
+          avtextformat.h                                                \
+          avtextwriters.h                                               \
           avutil.h                                                      \
           base64.h                                                      \
           blowfish.h                                                    \
@@ -114,6 +116,7 @@ OBJS = adler32.o                                                        \
        audio_fifo.o                                                     \
        avstring.o                                                       \
        avsscanf.o                                                       \
+       textformat/avtextformat.o                                        \
        base64.o                                                         \
        blowfish.o                                                       \
        bprint.o                                                         \
@@ -189,6 +192,15 @@ OBJS = adler32.o                                                        \
        xga_font_data.o                                                  \
        xtea.o                                                           \
        tea.o                                                            \
+       textformat/tf_compact.o                                          \
+       textformat/tf_default.o                                          \
+       textformat/tf_flat.o                                             \
+       textformat/tf_ini.o                                              \
+       textformat/tf_json.o                                             \
+       textformat/tf_xml.o                                              \
+       textformat/tw_avio.o                                             \
+       textformat/tw_buffer.o                                           \
+       textformat/tw_stdout.o                                           \
        tx.o                                                             \
        tx_float.o                                                       \
        tx_double.o                                                      \

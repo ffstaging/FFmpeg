@@ -46,6 +46,8 @@
 #include "libavutil/dict.h"
 #include "libavutil/opt.h"
 #include "cmdutils.h"
+
+#include "fftools_log.h"
 #include "fopen_utf8.h"
 #include "opt_common.h"
 #ifdef _WIN32
@@ -610,7 +612,7 @@ int opt_default(void *optctx, const char *opt, const char *arg)
 #endif
 
     if (!strcmp(opt, "debug") || !strcmp(opt, "fdebug"))
-        av_log_set_level(AV_LOG_DEBUG);
+        ff_log_set_level(AV_LOG_DEBUG);
 
     if (!(p = strchr(opt, ':')))
         p = opt + strlen(opt);

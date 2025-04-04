@@ -81,6 +81,7 @@
 #include "ffmpeg.h"
 #include "ffmpeg_sched.h"
 #include "ffmpeg_utils.h"
+#include "fftools_log.h"
 
 const char program_name[] = "ffmpeg";
 const int program_birth_year = 2000;
@@ -671,7 +672,7 @@ static void print_report(int is_last_report, int64_t timer_start, int64_t cur_ti
 
     if (print_stats || is_last_report) {
         const char end = is_last_report ? '\n' : '\r';
-        if (print_stats==1 && AV_LOG_INFO > av_log_get_level()) {
+        if (print_stats==1 && AV_LOG_INFO > ff_log_get_level()) {
             fprintf(stderr, "%s    %c", buf.str, end);
         } else
             av_log(NULL, AV_LOG_INFO, "%s    %c", buf.str, end);
@@ -801,8 +802,8 @@ static int check_keyboard_interaction(int64_t cur_time)
         av_log(NULL, AV_LOG_INFO, "\n\n[q] command received. Exiting.\n\n");
         return AVERROR_EXIT;
     }
-    if (key == '+') av_log_set_level(av_log_get_level()+10);
-    if (key == '-') av_log_set_level(av_log_get_level()-10);
+    if (key == '+') ff_log_set_level(ff_log_get_level()+10);
+    if (key == '-') ff_log_set_level(ff_log_get_level()-10);
     if (key == 'c' || key == 'C'){
         char buf[4096], target[64], command[256], arg[256] = {0};
         double time;
@@ -954,7 +955,8 @@ int main(int argc, char **argv)
 
     setvbuf(stderr,NULL,_IONBF,0); /* win32 runtime needs this */
 
-    av_log_set_flags(AV_LOG_SKIP_REPEATED);
+    ff_log_set_flags(FF_LOG_SKIP_REPEATED);
+    init_logging();
     parse_loglevel(argc, argv, options);
 
 #if CONFIG_AVDEVICE

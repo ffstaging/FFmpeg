@@ -1968,6 +1968,150 @@ static Writer xml_writer = {
     .priv_class           = &xml_class,
 };
 
+
+/* YAML output */
+
+typedef struct YMLContext {
+    const AVClass *class;
+    int indent_level;
+    int blank_lines;
+} YMLContext;
+
+#undef OFFSET
+#define OFFSET(x) offsetof(YMLContext, x)
+
+static const AVOption yml_options[] = {
+    { "blank_lines", "print blank lines for better readability", OFFSET(blank_lines), AV_OPT_TYPE_BOOL, {.i64=1}, 0, 1 },
+    { NULL }
+};
+
+DEFINE_WRITER_CLASS(yml);
+
+static av_cold int yml_init(WriterContext *wctx)
+{
+    YMLContext *yml = wctx->priv;
+    yml->indent_level = 0;
+    return 0;
+}
+
+static int yml_is_plain(const char *s)
+{
+    if (!s || !*s)
+        return 0;
+    for (; *s; s++) {
+        if (!( (*s >= 'a' && *s <= 'z') ||
+               (*s >= 'A' && *s <= 'Z') ||
+               (*s >= '0' && *s <= '9') ||
+               *s == '_' || *s == '-' || *s == '.' ))
+            return 0;
+    }
+    return 1;
+}
+
+static void yml_print_quote_escape(WriterContext *wctx, const char *src)
+{
+    if (yml_is_plain(src)) {
+        writer_put_str(wctx, src);
+    } else {
+        writer_w8(wctx, '"');
+        for (const char *p = src; *p; p++) {
+            unsigned char c = *p;
+            if (c == '\\' || c == '"') {
+                writer_w8(wctx, '\\');
+                writer_w8(wctx, c);
+            } else if (c < 32 || c > 126) {
+                writer_printf(wctx, "\\u%04x", c);
+            } else {
+                writer_w8(wctx, c);
+            }
+        }
+        writer_w8(wctx, '"');
+    }
+}
+
+#define YML_INDENT() if (yml->indent_level > 0) writer_printf(wctx, "%*c", yml->indent_level * 2, ' ')
+#define YML_BLANKLINE() if (yml->blank_lines ) writer_put_str(wctx, "\n");
+
+/* At the top level, print yaml start marker '---'. If parent section is array,
+ * output a dash. If the section isn't merely a wrapper, its name as a mapping key.
+ * Otherwise, output the section name as a mapping key. */
+static void yml_print_section_header(WriterContext *wctx, const void *data)
+{
+    YMLContext *yml = wctx->priv;
+    const struct section *section = wctx->section[wctx->level];
+    const struct section *parent = (wctx->level > 0) ? wctx->section[wctx->level-1] : NULL;
+
+    if (wctx->level == 0) {
+        writer_put_str(wctx, "---\n");
+        return;
+    }
+
+    int parent_is_array = parent && (parent->flags & SECTION_FLAG_IS_ARRAY);
+    if (parent_is_array) {
+        YML_BLANKLINE();
+        writer_printf(wctx, "%*c- ", yml->indent_level * 2, ' ');
+        if (!(section->flags & SECTION_FLAG_IS_WRAPPER)) {
+            writer_printf(wctx, "%s:\n", section->name);
+        } else {
+            writer_put_str(wctx, "\n");
+        }
+        yml->indent_level++;
+        return;
+    }
+
+    YML_INDENT();
+    writer_put_str(wctx, section->name);
+    writer_put_str(wctx, ":\n");
+    yml->indent_level++;
+}
+
+static void yml_print_section_footer(WriterContext *wctx)
+{
+    YMLContext *yml = wctx->priv;
+    if (wctx->level == 0) {
+        writer_put_str(wctx, "...\n"); // yaml end document marker
+    } else {
+        if (wctx->level == 1)
+            YML_BLANKLINE();
+        yml->indent_level--;
+    }
+}
+
+static void yml_print_str(WriterContext *wctx, const char *key, const char *value)
+{
+    YMLContext *yml = wctx->priv;
+    YML_INDENT();
+
+    yml_print_quote_escape(wctx, key);
+    writer_put_str(wctx, ": ");
+
+    yml_print_quote_escape(wctx, value);
+    writer_put_str(wctx, "\n");
+}
+
+static void yml_print_int(WriterContext *wctx, const char *key, int64_t value)
+{
+    YMLContext *yml = wctx->priv;
+    YML_INDENT();
+
+    yml_print_quote_escape(wctx, key);
+    writer_put_str(wctx, ": ");
+
+    writer_printf(wctx, "%"PRId64"\n", value);
+}
+
+static const Writer yml_writer = {
+    .name                 = "yml",
+    .priv_size            = sizeof(YMLContext),
+    .init                 = yml_init,
+    .print_section_header = yml_print_section_header,
+    .print_section_footer = yml_print_section_footer,
+    .print_integer        = yml_print_int,
+    .print_string         = yml_print_str,
+    .flags                = WRITER_FLAG_PUT_PACKETS_AND_FRAMES_IN_SAME_CHAPTER,
+    .priv_class           = &yml_class,
+};
+
 static void writer_register_all(void)
 {
     static int initialized;
@@ -1983,6 +2127,7 @@ static void writer_register_all(void)
     writer_register(&ini_writer);
     writer_register(&json_writer);
     writer_register(&xml_writer);
+    writer_register(&yml_writer);
 }
 
 #define print_fmt(k, f, ...) do {              \
@@ -4606,7 +4751,7 @@ static const OptionDef real_options[] = {
     { "pretty",                OPT_TYPE_FUNC,        0, {.func_arg = opt_pretty},
       "prettify the format of displayed values, make it more human readable" },
     { "output_format",         OPT_TYPE_STRING,      0, { &output_format },
-      "set the output printing format (available formats are: default, compact, csv, flat, ini, json, xml)", "format" },
+      "set the output printing format (available formats are: default, compact, csv, flat, ini, yml, json, xml)", "format" },
     { "print_format",          OPT_TYPE_STRING,      0, { &output_format }, "alias for -output_format (deprecated)" },
     { "of",                    OPT_TYPE_STRING,      0, { &output_format }, "alias for -output_format", "format" },
     { "select_streams",        OPT_TYPE_STRING,      0, { &stream_specifier }, "select the specified streams", "stream_specifier" },

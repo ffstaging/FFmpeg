@@ -626,6 +626,22 @@ This option automatically sets @option{fully_qualified} to 1.
 
 For more information about the XML format, see
 @url{https://www.w3.org/XML/}.
+
+@section yaml
+YAML based format.
+
+Each section is printed using YAML notation.
+
+The description of the accepted options follows.
+
+@table @option
+
+@item blank_lines
+If set to 1, blank lines are inserted between sections for
+better readability. Default value is 1.
+@end table
+
+For more information about YAML, see @url{https://yaml.org/}.
 @c man end WRITERS
 
 @chapter Timecode

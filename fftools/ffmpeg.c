@@ -81,6 +81,7 @@
 #include "ffmpeg.h"
 #include "ffmpeg_sched.h"
 #include "ffmpeg_utils.h"
+#include "fftools/resources/resman.h"
 
 const char program_name[] = "ffmpeg";
 const int program_birth_year = 2000;
@@ -344,6 +345,8 @@ static void ffmpeg_cleanup(int ret)
     av_freep(&output_files);
 
     uninit_opts();
+
+    ff_resman_uninit();
 
     avformat_network_deinit();
 

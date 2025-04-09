@@ -1269,6 +1269,9 @@ int opt_loglevel(void *optctx, const char *opt, const char *arg)
     int level = av_log_get_level();
     int cmd, i = 0;
 
+    // libavutil has this enabled by default, fftools sets this off by default
+    flags &= ~AV_LOG_PRINT_MEMADDRESSES;
+
     av_assert0(arg);
     while (*arg) {
         token = arg;
@@ -1304,6 +1307,12 @@ int opt_loglevel(void *optctx, const char *opt, const char *arg)
             } else {
                 flags |= AV_LOG_PRINT_DATETIME;
             }
+        } else if (av_strstart(token, "memaddresses", &arg)) {
+            if (cmd == '-') {
+                flags &= ~AV_LOG_PRINT_MEMADDRESSES;
+            } else {
+                flags |= AV_LOG_PRINT_MEMADDRESSES;
+            }
         } else {
             break;
         }
@@ -1315,6 +1324,7 @@ int opt_loglevel(void *optctx, const char *opt, const char *arg)
         arg++;
     } else if (!i) {
         flags = av_log_get_flags();  /* level value without prefix, reset flags */
+        flags &= ~AV_LOG_PRINT_MEMADDRESSES;
     }
 
     for (i = 0; i < FF_ARRAY_ELEMS(log_levels); i++) {

@@ -56,7 +56,7 @@ static AVMutex mutex = AV_MUTEX_INITIALIZER;
 #endif
 
 static int av_log_level = AV_LOG_INFO;
-static int flags;
+static int flags = AV_LOG_PRINT_MEMADDRESSES;
 
 #define NB_LEVELS 8
 #if defined(_WIN32) && HAVE_SETCONSOLETEXTATTRIBUTE && HAVE_GETSTDHANDLE
@@ -327,16 +327,18 @@ static void format_line(void *avcl, int level, const char *fmt, va_list vl,
 
     if(type) type[0] = type[1] = AV_CLASS_CATEGORY_NA + 16;
     if (*print_prefix && avc) {
+        const char *p_fmt = flags & AV_LOG_PRINT_MEMADDRESSES ? "[%s @ %p] " : "[%s] ";
+
         if (avc->parent_log_context_offset) {
             AVClass** parent = *(AVClass ***) (((uint8_t *) avcl) +
                                    avc->parent_log_context_offset);
             if (parent && *parent) {
-                av_bprintf(part+0, "[%s @ %p] ",
+                av_bprintf(part+0, p_fmt,
                            item_name(parent, *parent), parent);
                 if(type) type[0] = get_category(parent);
             }
         }
-        av_bprintf(part+1, "[%s @ %p] ",
+        av_bprintf(part+1, p_fmt,
                    item_name(avcl, avc), avcl);
         if(type) type[1] = get_category(avcl);
     }

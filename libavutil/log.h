@@ -416,6 +416,11 @@ int av_log_format_line2(void *ptr, int level, const char *fmt, va_list vl,
  */
 #define AV_LOG_PRINT_DATETIME 8
 
+/**
+ * Do not print memory addresses of context instances.
+ */
+#define AV_LOG_NO_PRINT_MEMADDRESS 16
+
 void av_log_set_flags(int arg);
 int av_log_get_flags(void);
 

@@ -139,6 +139,28 @@ else
 	$(BIN2C) $(patsubst $(SRC_PATH)/%,$(SRC_LINK)/%,$<) $@ $(subst .,_,$(basename $(notdir $@)))
 endif
 
+# Minify CSS: Remove comment lines, remove line breaks, fold whitespace
+%.css.min: %.css
+	sed 's!/\\*.*\\*/!!g' $< \
+	| tr '\n' ' ' \
+	| tr -s ' ' \
+	| sed 's/^ //; s/ $$//' \
+	> $@
+
+%.css.min.gz: TAG = GZIP
+%.css.min.gz: %.css.min
+	$(M)gzip -nc9 $< > $@
+
+%.css.c: %.css.min.gz $(BIN2CEXE)
+	$(BIN2C) $< $@ $(subst .,_,$(basename $(notdir $@)))
+
+%.html.gz: TAG = GZIP
+%.html.gz: %.html
+	$(M)gzip -nc9 $(patsubst $(SRC_PATH)/%,$(SRC_LINK)/%,$<) > $@
+
+%.html.c: %.html.gz $(BIN2CEXE)
+	$(BIN2C) $< $@ $(subst .,_,$(basename $(notdir $@)))
+
 clean::
 	$(RM) $(BIN2CEXE) $(CLEANSUFFIXES:%=ffbuild/%)
 
@@ -214,7 +236,7 @@ $(TOOLOBJS): | tools
 
 OUTDIRS := $(OUTDIRS) $(dir $(OBJS) $(HOBJS) $(HOSTOBJS) $(SLIBOBJS) $(SHLIBOBJS) $(STLIBOBJS) $(TESTOBJS))
 
-CLEANSUFFIXES     = *.d *.gcda *.gcno *.h.c *.ho *.map *.o *.objs *.pc *.ptx *.ptx.gz *.ptx.c *.ver *.version *$(DEFAULT_X86ASMD).asm *~ *.ilk *.pdb
+CLEANSUFFIXES     = *.d *.gcda *.gcno *.h.c *.ho *.map *.o *.objs *.pc *.ptx *.ptx.gz *.ptx.c *.ver *.version *.html.gz *.html.c *.css.min *.css.min.gz *.css.c  *$(DEFAULT_X86ASMD).asm *~ *.ilk *.pdb
 LIBSUFFIXES       = *.a *.lib *.so *.so.* *.dylib *.dll *.def *.dll.a
 
 define RULES

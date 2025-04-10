@@ -9,6 +9,9 @@ AVBASENAMES  = ffmpeg ffplay ffprobe
 ALLAVPROGS   = $(AVBASENAMES:%=%$(PROGSSUF)$(EXESUF))
 ALLAVPROGS_G = $(AVBASENAMES:%=%$(PROGSSUF)_g$(EXESUF))
 
+
+include $(SRC_PATH)/fftools/resources/Makefile
+
 OBJS-ffmpeg +=                  \
     fftools/ffmpeg_dec.o        \
     fftools/ffmpeg_demux.o      \
@@ -21,6 +24,7 @@ OBJS-ffmpeg +=                  \
     fftools/ffmpeg_sched.o      \
     fftools/sync_queue.o        \
     fftools/thread_queue.o      \
+    $(OBJS-resman)              \
 
 OBJS-ffplay += fftools/ffplay_renderer.o
 

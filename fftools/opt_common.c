@@ -1304,6 +1304,12 @@ int opt_loglevel(void *optctx, const char *opt, const char *arg)
             } else {
                 flags |= AV_LOG_PRINT_DATETIME;
             }
+        } else if (av_strstart(token, "mem", &arg)) {
+            if (cmd == '-') {
+                flags |= AV_LOG_NO_PRINT_MEMADDRESS;
+            } else {
+                flags &= ~AV_LOG_NO_PRINT_MEMADDRESS;
+            }
         } else {
             break;
         }
@@ -1335,6 +1341,7 @@ int opt_loglevel(void *optctx, const char *opt, const char *arg)
         av_log(NULL, AV_LOG_FATAL, "\"level\"\n");
         av_log(NULL, AV_LOG_FATAL, "\"time\"\n");
         av_log(NULL, AV_LOG_FATAL, "\"datetime\"\n");
+        av_log(NULL, AV_LOG_FATAL, "\"mem\"\n");
         return AVERROR(EINVAL);
     }
 

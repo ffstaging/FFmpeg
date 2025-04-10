@@ -3761,7 +3761,7 @@ int main(int argc, char **argv)
 
     init_dynload();
 
-    av_log_set_flags(AV_LOG_SKIP_REPEATED);
+    av_log_set_flags(AV_LOG_SKIP_REPEATED | AV_LOG_NO_PRINT_MEMADDRESS);
     parse_loglevel(argc, argv, options);
 
     /* register all codecs, demux and protocols */

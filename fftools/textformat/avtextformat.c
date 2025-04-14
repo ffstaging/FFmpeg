@@ -301,6 +301,27 @@ void avtext_print_integer(AVTextFormatContext *tctx, const char *key, int64_t va
     }
 }
 
+void avtext_print_integer_flags(AVTextFormatContext *tctx, const char *key, int64_t val, int flags)
+{
+    const AVTextFormatSection *section;
+
+    if (!tctx || !key || tctx->level < 0 || tctx->level >= SECTION_MAX_NB_LEVELS)
+        return;
+
+    section = tctx->section[tctx->level];
+
+    if (tctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_NEVER ||
+        (tctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_AUTO
+            && (flags & AV_TEXTFORMAT_PRINT_STRING_OPTIONAL)
+            && !(tctx->formatter->flags & AV_TEXTFORMAT_FLAG_SUPPORTS_OPTIONAL_FIELDS)))
+        return;
+
+    if (section->show_all_entries || av_dict_get(section->entries_to_show, key, NULL, 0)) {
+        tctx->formatter->print_integer(tctx, key, val);
+        tctx->nb_item[tctx->level]++;
+    }
+}
+
 static inline int validate_string(AVTextFormatContext *tctx, char **dstp, const char *src)
 {
     const uint8_t *p, *endp, *srcp = (const uint8_t *)src;

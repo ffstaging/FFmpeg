@@ -308,24 +308,25 @@ void avtext_print_integer(AVTextFormatContext *tctx, const char *key, int64_t va
 
 static inline int validate_string(AVTextFormatContext *tctx, char **dstp, const char *src)
 {
-    const uint8_t *p, *endp;
+    const uint8_t *p, *endp, *srcp = (const uint8_t *)src;
     AVBPrint dstbuf;
+    AVBPrint bp;
     int invalid_chars_nb = 0, ret = 0;
 
+    *dstp = NULL;
     av_bprint_init(&dstbuf, 0, AV_BPRINT_SIZE_UNLIMITED);
+    av_bprint_init(&bp, 0, AV_BPRINT_SIZE_UNLIMITED);
 
-    endp = src + strlen(src);
-    for (p = src; *p;) {
-        uint32_t code;
+    endp = srcp + strlen(src);
+    for (p = srcp; *p;) {
+        int32_t code;
         int invalid = 0;
         const uint8_t *p0 = p;
 
         if (av_utf8_decode(&code, &p, endp, tctx->string_validation_utf8_flags) < 0) {
-            AVBPrint bp;
-            av_bprint_init(&bp, 0, AV_BPRINT_SIZE_AUTOMATIC);
-            bprint_bytes(&bp, p0, p-p0);
-            av_log(tctx, AV_LOG_DEBUG,
-                   "Invalid UTF-8 sequence %s found in string '%s'\n", bp.str, src);
+            av_bprint_clear(&bp);
+            bprint_bytes(&bp, p0, p - p0);
+            av_log(tctx, AV_LOG_DEBUG, "Invalid UTF-8 sequence %s found in string '%s'\n", bp.str, src);
             invalid = 1;
         }
 
@@ -345,7 +346,7 @@ static inline int validate_string(AVTextFormatContext *tctx, char **dstp, const 
         }
 
         if (!invalid || tctx->string_validation == AV_TEXTFORMAT_STRING_VALIDATION_IGNORE)
-            av_bprint_append_data(&dstbuf, p0, p-p0);
+            av_bprint_append_data(&dstbuf, (const char *)p0, p - p0);
     }
 
     if (invalid_chars_nb && tctx->string_validation == AV_TEXTFORMAT_STRING_VALIDATION_REPLACE)
@@ -355,6 +356,7 @@ static inline int validate_string(AVTextFormatContext *tctx, char **dstp, const 
 
 end:
     av_bprint_finalize(&dstbuf, dstp);
+    av_bprint_finalize(&bp, NULL);
     return ret;
 }
 

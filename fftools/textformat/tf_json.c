@@ -80,13 +80,18 @@ static const char *json_escape_str(AVBPrint *dst, const char *src, void *log_ctx
     static const char json_subst[]  = { '"', '\\',  'b',  'f',  'n',  'r',  't', 0 };
     const char *p;
 
+    if (!src) {
+        av_log(log_ctx, AV_LOG_ERROR, "json_escape_str: NULL source string\n");
+        return NULL;
+    }
+
     for (p = src; *p; p++) {
         char *s = strchr(json_escape, *p);
         if (s) {
             av_bprint_chars(dst, '\\', 1);
             av_bprint_chars(dst, json_subst[s - json_escape], 1);
         } else if ((unsigned char)*p < 32) {
-            av_bprintf(dst, "\\u00%02x", *p & 0xff);
+            av_bprintf(dst, "\\u00%02x", (unsigned char)*p);
         } else {
             av_bprint_chars(dst, *p, 1);
         }
@@ -105,6 +110,7 @@ static void json_print_section_header(AVTextFormatContext *wctx, const void *dat
         wctx->section[wctx->level-1] : NULL;
 
     if (wctx->level && wctx->nb_item[wctx->level-1])
+    if (wctx->level && wctx->nb_item[wctx->level - 1])
         writer_put_str(wctx, ",\n");
 
     if (section->flags & AV_TEXTFORMAT_SECTION_FLAG_IS_WRAPPER) {

@@ -93,9 +93,8 @@ static const AVClass textcontext_class = {
 
 static void bprint_bytes(AVBPrint *bp, const uint8_t *ubuf, size_t ubuf_size)
 {
-    int i;
     av_bprintf(bp, "0X");
-    for (i = 0; i < ubuf_size; i++)
+    for (unsigned i = 0; i < ubuf_size; i++)
         av_bprintf(bp, "%02X", ubuf[i]);
 }
 
@@ -141,7 +140,10 @@ int avtext_context_open(AVTextFormatContext      **ptctx,
     AVTextFormatContext *tctx;
     int i, ret = 0;
 
-    if (!(tctx = av_mallocz(sizeof(AVTextFormatContext)))) {
+    if (!ptctx || !formatter)
+        return AVERROR(EINVAL);
+
+    if (!((tctx = av_mallocz(sizeof(AVTextFormatContext))))) {
         ret = AVERROR(ENOMEM);
         goto fail;
     }
@@ -213,25 +215,26 @@ int avtext_context_open(AVTextFormatContext      **ptctx,
                     av_log(NULL, AV_LOG_ERROR, " %s", n);
                 av_log(NULL, AV_LOG_ERROR, "\n");
             }
-            return ret;
+            goto fail;
         }
 
     /* validate replace string */
     {
-        const uint8_t *p = tctx->string_validation_replacement;
-        const uint8_t *endp = p + strlen(p);
+        const uint8_t *p = (uint8_t *)tctx->string_validation_replacement;
+        const uint8_t *endp = p + strlen((const char *)p);
         while (*p) {
             const uint8_t *p0 = p;
             int32_t code;
             ret = av_utf8_decode(&code, &p, endp, tctx->string_validation_utf8_flags);
             if (ret < 0) {
                 AVBPrint bp;
-                av_bprint_init(&bp, 0, AV_BPRINT_SIZE_AUTOMATIC);
+                av_bprint_init(&bp, 0, AV_BPRINT_SIZE_UNLIMITED);
                 bprint_bytes(&bp, p0, p - p0),
                     av_log(tctx, AV_LOG_ERROR,
                            "Invalid UTF8 sequence %s found in string validation replace '%s'\n",
                            bp.str, tctx->string_validation_replacement);
-                return ret;
+                av_bprint_finalize(&bp, NULL);
+                goto fail;
             }
         }
     }
@@ -259,6 +262,9 @@ static const char unit_bit_per_second_str[] = "bit/s";
 
 void avtext_print_section_header(AVTextFormatContext *tctx, const void *data, int section_id)
 {
+    if (section_id < 0 || section_id >= tctx->nb_sections)
+        return;
+
     tctx->level++;
     av_assert0(tctx->level < SECTION_MAX_NB_LEVELS);
 
@@ -272,6 +278,9 @@ void avtext_print_section_header(AVTextFormatContext *tctx, const void *data, in
 
 void avtext_print_section_footer(AVTextFormatContext *tctx)
 {
+    if (tctx->level < 0 || tctx->level >= SECTION_MAX_NB_LEVELS)
+        return;
+
     int section_id = tctx->section[tctx->level]->id;
     int parent_section_id = tctx->level
         ? tctx->section[tctx->level - 1]->id
@@ -289,7 +298,12 @@ void avtext_print_section_footer(AVTextFormatContext *tctx)
 
 void avtext_print_integer(AVTextFormatContext *tctx, const char *key, int64_t val)
 {
-    const struct AVTextFormatSection *section = tctx->section[tctx->level];
+    const AVTextFormatSection *section;
+
+    if (!key || tctx->level < 0 || tctx->level >= SECTION_MAX_NB_LEVELS)
+        return;
+
+    section = tctx->section[tctx->level];
 
     if (section->show_all_entries || av_dict_get(section->entries_to_show, key, NULL, 0)) {
         tctx->formatter->print_integer(tctx, key, val);
@@ -299,24 +313,25 @@ void avtext_print_integer(AVTextFormatContext *tctx, const char *key, int64_t va
 
 static inline int validate_string(AVTextFormatContext *tctx, char **dstp, const char *src)
 {
-    const uint8_t *p, *endp;
+    const uint8_t *p, *endp, *srcp = (const uint8_t *)src;
     AVBPrint dstbuf;
+    AVBPrint bp;
     int invalid_chars_nb = 0, ret = 0;
 
+    *dstp = NULL;
     av_bprint_init(&dstbuf, 0, AV_BPRINT_SIZE_UNLIMITED);
+    av_bprint_init(&bp, 0, AV_BPRINT_SIZE_UNLIMITED);
 
-    endp = src + strlen(src);
-    for (p = src; *p;) {
-        uint32_t code;
+    endp = srcp + strlen(src);
+    for (p = srcp; *p;) {
+        int32_t code;
         int invalid = 0;
         const uint8_t *p0 = p;
 
         if (av_utf8_decode(&code, &p, endp, tctx->string_validation_utf8_flags) < 0) {
-            AVBPrint bp;
-            av_bprint_init(&bp, 0, AV_BPRINT_SIZE_AUTOMATIC);
-            bprint_bytes(&bp, p0, p-p0);
-            av_log(tctx, AV_LOG_DEBUG,
-                   "Invalid UTF-8 sequence %s found in string '%s'\n", bp.str, src);
+            av_bprint_clear(&bp);
+            bprint_bytes(&bp, p0, p - p0);
+            av_log(tctx, AV_LOG_DEBUG, "Invalid UTF-8 sequence %s found in string '%s'\n", bp.str, src);
             invalid = 1;
         }
 
@@ -336,7 +351,7 @@ static inline int validate_string(AVTextFormatContext *tctx, char **dstp, const 
         }
 
         if (!invalid || tctx->string_validation == AV_TEXTFORMAT_STRING_VALIDATION_IGNORE)
-            av_bprint_append_data(&dstbuf, p0, p-p0);
+            av_bprint_append_data(&dstbuf, (const char *)p0, p - p0);
     }
 
     if (invalid_chars_nb && tctx->string_validation == AV_TEXTFORMAT_STRING_VALIDATION_REPLACE)
@@ -346,6 +361,7 @@ static inline int validate_string(AVTextFormatContext *tctx, char **dstp, const 
 
 end:
     av_bprint_finalize(&dstbuf, dstp);
+    av_bprint_finalize(&bp, NULL);
     return ret;
 }
 
@@ -358,17 +374,18 @@ struct unit_value {
     const char *unit;
 };
 
-static char *value_string(AVTextFormatContext *tctx, char *buf, int buf_size, struct unit_value uv)
+static char *value_string(const AVTextFormatContext *tctx, char *buf, int buf_size, struct unit_value uv)
 {
     double vald;
-    int64_t vali;
+    int64_t vali = 0;
     int show_float = 0;
 
     if (uv.unit == unit_second_str) {
         vald = uv.val.d;
         show_float = 1;
     } else {
-        vald = vali = uv.val.i;
+        vald = (double)uv.val.i;
+        vali = uv.val.i;
     }
 
     if (uv.unit == unit_second_str && tctx->use_value_sexagesimal_format) {
@@ -387,17 +404,17 @@ static char *value_string(AVTextFormatContext *tctx, char *buf, int buf_size, st
             int64_t index;
 
             if (uv.unit == unit_byte_str && tctx->use_byte_value_binary_prefix) {
-                index = (int64_t) (log2(vald)) / 10;
-                index = av_clip(index, 0, FF_ARRAY_ELEMS(si_prefixes) - 1);
+                index = (int64_t)(log2(vald) / 10);
+                index = av_clip64(index, 0, FF_ARRAY_ELEMS(si_prefixes) - 1);
                 vald /= si_prefixes[index].bin_val;
                 prefix_string = si_prefixes[index].bin_str;
             } else {
-                index = (int64_t) (log10(vald)) / 3;
-                index = av_clip(index, 0, FF_ARRAY_ELEMS(si_prefixes) - 1);
+                index = (int64_t)(log10(vald) / 3);
+                index = av_clip64(index, 0, FF_ARRAY_ELEMS(si_prefixes) - 1);
                 vald /= si_prefixes[index].dec_val;
                 prefix_string = si_prefixes[index].dec_str;
             }
-            vali = vald;
+            vali = (int64_t)vald;
         }
 
         if (show_float || (tctx->use_value_prefix && vald != (int64_t)vald))
@@ -425,8 +442,13 @@ void avtext_print_unit_int(AVTextFormatContext *tctx, const char *key, int value
 
 int avtext_print_string(AVTextFormatContext *tctx, const char *key, const char *val, int flags)
 {
-    const struct AVTextFormatSection *section = tctx->section[tctx->level];
+    const AVTextFormatSection *section;
     int ret = 0;
+
+    if (!key || !val || tctx->level < 0 || tctx->level >= SECTION_MAX_NB_LEVELS)
+        return AVERROR(EINVAL);
+
+    section = tctx->section[tctx->level];
 
     if (tctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_NEVER ||
         (tctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_AUTO
@@ -469,12 +491,11 @@ void avtext_print_rational(AVTextFormatContext *tctx, const char *key, AVRationa
 void avtext_print_time(AVTextFormatContext *tctx, const char *key,
                        int64_t ts, const AVRational *time_base, int is_duration)
 {
-    char buf[128];
-
     if ((!is_duration && ts == AV_NOPTS_VALUE) || (is_duration && ts == 0)) {
         avtext_print_string(tctx, key, "N/A", AV_TEXTFORMAT_PRINT_STRING_OPTIONAL);
     } else {
-        double d = ts * av_q2d(*time_base);
+        char buf[128];
+        double d = av_q2d(*time_base) * ts;
         struct unit_value uv;
         uv.val.d = d;
         uv.unit = unit_second_str;
@@ -495,7 +516,8 @@ void avtext_print_data(AVTextFormatContext *tctx, const char *name,
                        const uint8_t *data, int size)
 {
     AVBPrint bp;
-    int offset = 0, l, i;
+    unsigned offset = 0;
+    int l, i;
 
     av_bprint_init(&bp, 0, AV_BPRINT_SIZE_UNLIMITED);
     av_bprintf(&bp, "\n");
@@ -522,25 +544,29 @@ void avtext_print_data(AVTextFormatContext *tctx, const char *name,
 void avtext_print_data_hash(AVTextFormatContext *tctx, const char *name,
                             const uint8_t *data, int size)
 {
-    char *p, buf[AV_HASH_MAX_SIZE * 2 + 64] = { 0 };
+    char buf[AV_HASH_MAX_SIZE * 2 + 64] = { 0 };
+    int len;
 
     if (!tctx->hash)
         return;
 
     av_hash_init(tctx->hash);
     av_hash_update(tctx->hash, data, size);
-    snprintf(buf, sizeof(buf), "%s:", av_hash_get_name(tctx->hash));
-    p = buf + strlen(buf);
-    av_hash_final_hex(tctx->hash, p, buf + sizeof(buf) - p);
+    len = snprintf(buf, sizeof(buf), "%s:", av_hash_get_name(tctx->hash));
+    av_hash_final_hex(tctx->hash, (uint8_t *)&buf[len], (int)sizeof(buf) - len);
     avtext_print_string(tctx, name, buf, 0);
 }
 
 void avtext_print_integers(AVTextFormatContext *tctx, const char *name,
-                                  uint8_t *data, int size, const char *format,
-                                  int columns, int bytes, int offset_add)
+                           uint8_t *data, int size, const char *format,
+                           int columns, int bytes, int offset_add)
 {
     AVBPrint bp;
-    int offset = 0, l, i;
+    unsigned offset = 0;
+    int l, i;
+
+    if (!name || !data || !format || columns <= 0 || bytes <= 0)
+        return;
 
     av_bprint_init(&bp, 0, AV_BPRINT_SIZE_UNLIMITED);
     av_bprintf(&bp, "\n");
@@ -606,12 +632,15 @@ int avtextwriter_context_open(AVTextWriterContext **pwctx, const AVTextWriter *w
     AVTextWriterContext *wctx;
     int ret = 0;
 
-    if (!(wctx = av_mallocz(sizeof(AVTextWriterContext)))) {
+    if (!pwctx || !writer)
+        return AVERROR(EINVAL);
+
+    if (!((wctx = av_mallocz(sizeof(AVTextWriterContext))))) {
         ret = AVERROR(ENOMEM);
         goto fail;
     }
 
-    if (!(wctx->priv = av_mallocz(writer->priv_size))) {
+    if (writer->priv_size && !((wctx->priv = av_mallocz(writer->priv_size)))) {
         ret = AVERROR(ENOMEM);
         goto fail;
     }

@@ -53,13 +53,9 @@ static inline void stdout_put_str(AVTextWriterContext *wctx, const char *str)
     printf("%s", str);
 }
 
-static inline void stdout_printf(AVTextWriterContext *wctx, const char *fmt, ...)
+static inline void stdout_printf(AVTextWriterContext *wctx, const char *fmt, va_list vl)
 {
-    va_list ap;
-
-    va_start(ap, fmt);
-    vprintf(fmt, ap);
-    va_end(ap);
+    vprintf(fmt, vl);
 }
 
 

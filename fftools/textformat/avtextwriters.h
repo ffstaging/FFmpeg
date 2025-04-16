@@ -41,7 +41,7 @@ typedef struct AVTextWriter {
     void (*uninit)(AVTextWriterContext *wctx);
     void (*writer_w8)(AVTextWriterContext *wctx, int b);
     void (*writer_put_str)(AVTextWriterContext *wctx, const char *str);
-    void (*writer_printf)(AVTextWriterContext *wctx, const char *fmt, ...);
+    void (*writer_printf)(AVTextWriterContext *wctx, const char *fmt, va_list vl);
 } AVTextWriter;
 
 typedef struct AVTextWriterContext {

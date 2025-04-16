@@ -56,14 +56,11 @@ static void io_put_str(AVTextWriterContext *wctx, const char *str)
     avio_write(ctx->avio_context, (const unsigned char *)str, (int)strlen(str));
 }
 
-static void io_printf(AVTextWriterContext *wctx, const char *fmt, ...)
+static void io_printf(AVTextWriterContext *wctx, const char *fmt, va_list vl)
 {
     IOWriterContext *ctx = wctx->priv;
-    va_list ap;
 
-    va_start(ap, fmt);
-    avio_vprintf(ctx->avio_context, fmt, ap);
-    va_end(ap);
+    avio_vprintf(ctx->avio_context, fmt, vl);
 }
 
 

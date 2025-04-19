@@ -1012,5 +1012,8 @@ finish:
 
     sch_free(&sch);
 
+    av_log(NULL, AV_LOG_INFO, "\n");
+    av_log(NULL, AV_LOG_INFO, "EXIT\n");
+
     return ret;
 }

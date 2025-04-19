@@ -56,14 +56,11 @@ static void buffer_put_str(AVTextWriterContext *wctx, const char *str)
     av_bprintf(ctx->buffer, "%s", str);
 }
 
-static void buffer_printf(AVTextWriterContext *wctx, const char *fmt, ...)
+static void buffer_printf(AVTextWriterContext *wctx, const char *fmt, va_list vl)
 {
     BufferWriterContext *ctx = wctx->priv;
 
-    va_list vargs;
-    va_start(vargs, fmt);
-    av_vbprintf(ctx->buffer, fmt, vargs);
-    va_end(vargs);
+    av_vbprintf(ctx->buffer, fmt, vl);
 }
 
 

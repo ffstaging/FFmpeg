@@ -586,8 +586,6 @@ static int print_streams(GraphPrintContext *gpc, InputFile **ifiles, int nb_ifil
     AVBPrint                   buf;
     AVTextFormatSectionContext sec_ctx = { 0 };
 
-    sec_ctx.context_id = "Inputs";
-
     av_bprint_init(&buf, 0, AV_BPRINT_SIZE_AUTOMATIC);
 
     print_section_header_id(gpc, SECTION_ID_INPUTFILES, "Inputs", 0);
@@ -875,6 +873,11 @@ static int init_graphprint(GraphPrintContext **pgpc, AVBPrint *target_buf)
 
     av_bprint_init(target_buf, 0, AV_BPRINT_SIZE_UNLIMITED);
 
+    if (show_graph) {
+        if (!print_graphs_format || strcmp(print_graphs_format, "mermaidhtml") != 0)
+            print_graphs_format = av_strdup("mermaidhtml");
+    }
+
     if (!print_graphs_format)
         print_graphs_format = av_strdup("json");
     if (!print_graphs_format) {
@@ -1098,5 +1101,46 @@ cleanup:
 
 int print_filtergraphs(FilterGraph **graphs, int nb_graphs, InputFile **ifiles, int nb_ifiles, OutputFile **ofiles, int nb_ofiles)
 {
-    return print_filtergraphs_priv(graphs, nb_graphs, ifiles, nb_ifiles, ofiles, nb_ofiles);
+    int ret;
+
+    if (show_graph) {
+        char buf[2048];
+        AVBPrint bp;
+
+        av_bprint_init(&bp, 0, AV_BPRINT_SIZE_UNLIMITED);
+
+        print_graphs = 0;
+
+        ret = ff_get_temp_dir(buf, sizeof(buf));
+        if (ret) {
+            av_log(NULL, AV_LOG_ERROR, "Error getting temp directory path for graph output file\n");
+            return ret;
+        }
+
+        av_bprint_append_data(&bp, buf, strlen(buf));
+
+        ret = ff_make_timestamped_html_name(buf, sizeof(buf));
+        if (ret) {
+            av_log(NULL, AV_LOG_ERROR, "Error creating temp file name for graph output file\n");
+            return ret;
+        }
+
+        av_bprint_append_data(&bp, buf, strlen(buf));
+
+        av_bprint_finalize(&bp, &print_graphs_file);
+    }
+
+    ret = print_filtergraphs_priv(graphs, nb_graphs, ifiles, nb_ifiles, ofiles, nb_ofiles);
+
+    if (!ret && show_graph) {
+        av_log(NULL, AV_LOG_INFO, "Execution graph saved as: %s\n", print_graphs_file);
+        av_log(NULL, AV_LOG_INFO, "Trying to launch graph in browser...\n");
+
+        ret = ff_open_html_in_browser(print_graphs_file);
+        if (ret) {
+            av_log(NULL, AV_LOG_ERROR, "Browser could not be launched for execution graph display\nPlease open manually: %s\n", print_graphs_file);
+        }
+    }
+
+    return ret;
 }

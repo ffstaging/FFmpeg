@@ -680,7 +680,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
 
     if (st->start_time != AV_NOPTS_VALUE && st->start_time != 0 && st->time_base.den && st->time_base.num) {
         const double stream_start = av_q2d(st->time_base) * st->start_time;
-        av_log(NULL, AV_LOG_INFO, ", Start-Time %.3fs", stream_start);
+        av_log(NULL, AV_LOG_INFO, ", Start %.6fs", stream_start);
     }
 
     dump_disposition(st->disposition, log_level);
@@ -883,7 +883,7 @@ void av_dump_format(AVFormatContext *ic, int index,
             av_log(NULL, AV_LOG_INFO, ", start: ");
             secs = llabs(ic->start_time / AV_TIME_BASE);
             us   = llabs(ic->start_time % AV_TIME_BASE);
-            av_log(NULL, AV_LOG_INFO, "%s%d.%06d",
+            av_log(NULL, AV_LOG_INFO, "%s%d.%06ds",
                    ic->start_time >= 0 ? "" : "-",
                    secs,
                    (int) av_rescale(us, 1000000, AV_TIME_BASE));

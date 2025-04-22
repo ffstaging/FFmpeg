@@ -697,6 +697,8 @@ static void formatters_register_all(void)
     registered_formatters[4] = &avtextformatter_ini;
     registered_formatters[5] = &avtextformatter_json;
     registered_formatters[6] = &avtextformatter_xml;
+    registered_formatters[7] = &avtextformatter_mermaid;
+    registered_formatters[8] = &avtextformatter_mermaidhtml;
 }
 
 const AVTextFormatter *avtext_get_formatter_by_name(const char *name)

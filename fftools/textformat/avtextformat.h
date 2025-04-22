@@ -118,17 +118,25 @@ struct AVTextFormatContext {
     unsigned int string_validation_utf8_flags;
 };
 
+typedef struct AVTextFormatOptions {
+    int show_optional_fields;
+    int show_value_unit;
+    int use_value_prefix;
+    int use_byte_value_binary_prefix;
+    int use_value_sexagesimal_format;
+} AVTextFormatOptions;
+
 #define AV_TEXTFORMAT_PRINT_STRING_OPTIONAL 1
 #define AV_TEXTFORMAT_PRINT_STRING_VALIDATE 2
 
+#define AV_TEXTFORMAT_OPEN_SHOW_VALUE_UNIT               1
+#define AV_TEXTFORMAT_OPEN_USE_VALUE_PREFIX              2
+#define AV_TEXTFORMAT_OPEN_USE_BYTE_BINARY_PREFIX        4
+#define AV_TEXTFORMAT_OPEN_USE_VALUE_SEXAGESIMAL_FORMAT  8
+#define AV_TEXTFORMAT_OPEN_SHOW_OPTIONAL_FIELDS         16
+
 int avtext_context_open(AVTextFormatContext **ptctx, const AVTextFormatter *formatter, AVTextWriterContext *writer_context, const char *args,
-                        const AVTextFormatSection *sections, int nb_sections,
-                        int show_value_unit,
-                        int use_value_prefix,
-                        int use_byte_value_binary_prefix,
-                        int use_value_sexagesimal_format,
-                        int show_optional_fields,
-                        char *show_data_hash);
+                        const AVTextFormatSection *sections, int nb_sections, AVTextFormatOptions options, char *show_data_hash);
 
 void avtext_context_close(AVTextFormatContext **tctx);
 

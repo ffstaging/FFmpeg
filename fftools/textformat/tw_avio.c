@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include "avtextwriters.h"
+#include "libavutil/avassert.h"
 
 #include "libavutil/error.h"
 
@@ -53,7 +54,7 @@ static void io_w8(AVTextWriterContext *wctx, int b)
 static void io_put_str(AVTextWriterContext *wctx, const char *str)
 {
     IOWriterContext *ctx = wctx->priv;
-    avio_write(ctx->avio_context, str, strlen(str));
+    avio_write(ctx->avio_context, (const unsigned char *)str, (int)strlen(str));
 }
 
 static void io_printf(AVTextWriterContext *wctx, const char *fmt, ...)
@@ -78,9 +79,13 @@ const AVTextWriter avtextwriter_avio = {
 
 int avtextwriter_create_file(AVTextWriterContext **pwctx, const char *output_filename)
 {
+    if (!output_filename || !output_filename[0]) {
+        av_log(NULL, AV_LOG_ERROR, "The output_filename cannot be NULL or empty\n");
+        return AVERROR(EINVAL);
+    }
+
     IOWriterContext *ctx;
     int ret;
-
 
     ret = avtextwriter_context_open(pwctx, &avtextwriter_avio);
     if (ret < 0)
@@ -103,6 +108,8 @@ int avtextwriter_create_file(AVTextWriterContext **pwctx, const char *output_fil
 
 int avtextwriter_create_avio(AVTextWriterContext **pwctx, AVIOContext *avio_ctx, int close_on_uninit)
 {
+    av_assert0(avio_ctx);
+
     IOWriterContext *ctx;
     int ret;
 

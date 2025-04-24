@@ -301,6 +301,21 @@ void avtext_print_integer(AVTextFormatContext *tctx, const char *key, int64_t va
     }
 }
 
+void avtext_print_integer_flags(AVTextFormatContext *tctx, const char *key, int64_t val, int flags)
+{
+    av_assert0(tctx);
+
+    if (tctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_NEVER)
+        return;
+
+    if (tctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_AUTO
+        && (flags & AV_TEXTFORMAT_PRINT_STRING_OPTIONAL)
+        && !(tctx->formatter->flags & AV_TEXTFORMAT_FLAG_SUPPORTS_OPTIONAL_FIELDS))
+        return;
+
+    avtext_print_integer(tctx, key, val);
+}
+
 static inline int validate_string(AVTextFormatContext *tctx, char **dstp, const char *src)
 {
     const uint8_t *p, *endp, *srcp = (const uint8_t *)src;
@@ -442,10 +457,12 @@ int avtext_print_string(AVTextFormatContext *tctx, const char *key, const char *
 
     section = tctx->section[tctx->level];
 
-    if (tctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_NEVER ||
-        (tctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_AUTO
-            && (flags & AV_TEXTFORMAT_PRINT_STRING_OPTIONAL)
-            && !(tctx->formatter->flags & AV_TEXTFORMAT_FLAG_SUPPORTS_OPTIONAL_FIELDS)))
+    if (tctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_NEVER)
+        return 0;
+
+    if (tctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_AUTO
+        && (flags & AV_TEXTFORMAT_PRINT_STRING_OPTIONAL)
+        && !(tctx->formatter->flags & AV_TEXTFORMAT_FLAG_SUPPORTS_OPTIONAL_FIELDS))
         return 0;
 
     if (section->show_all_entries || av_dict_get(section->entries_to_show, key, NULL, 0)) {

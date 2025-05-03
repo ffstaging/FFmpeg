@@ -18,13 +18,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include <limits.h>
-#include <stdarg.h>
 #include <string.h>
 
 #include "avtextwriters.h"
 #include "libavutil/avassert.h"
-
 #include "libavutil/error.h"
 
 /* AVIO Writer */

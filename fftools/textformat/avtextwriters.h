@@ -21,7 +21,6 @@
 #ifndef FFTOOLS_TEXTFORMAT_AVTEXTWRITERS_H
 #define FFTOOLS_TEXTFORMAT_AVTEXTWRITERS_H
 
-#include <stdint.h>
 #include "libavformat/avio.h"
 #include "libavutil/bprint.h"
 

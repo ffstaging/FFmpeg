@@ -18,9 +18,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include <limits.h>
-#include <stdarg.h>
-
 #include "avtextwriters.h"
 #include "libavutil/opt.h"
 #include "libavutil/bprint.h"

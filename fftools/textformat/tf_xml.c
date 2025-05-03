@@ -50,45 +50,45 @@ static const AVOption xml_options[] = {
 
 DEFINE_FORMATTER_CLASS(xml);
 
-static av_cold int xml_init(AVTextFormatContext *wctx)
+static av_cold int xml_init(AVTextFormatContext *tctx)
 {
-    XMLContext *xml = wctx->priv;
+    XMLContext *xml = tctx->priv;
 
     if (xml->xsd_strict) {
         xml->fully_qualified = 1;
 #define CHECK_COMPLIANCE(opt, opt_name)                                 \
         if (opt) {                                                      \
-            av_log(wctx, AV_LOG_ERROR,                                  \
+            av_log(tctx, AV_LOG_ERROR,                                  \
                    "XSD-compliant output selected but option '%s' was selected, XML output may be non-compliant.\n" \
                    "You need to disable such option with '-no%s'\n", opt_name, opt_name); \
             return AVERROR(EINVAL);                                     \
         }
         ////CHECK_COMPLIANCE(show_private_data, "private");
-        CHECK_COMPLIANCE(wctx->show_value_unit,   "unit");
-        CHECK_COMPLIANCE(wctx->use_value_prefix,  "prefix");
+        CHECK_COMPLIANCE(tctx->show_value_unit,   "unit");
+        CHECK_COMPLIANCE(tctx->use_value_prefix,  "prefix");
     }
 
     return 0;
 }
 
-#define XML_INDENT() writer_printf(wctx, "%*c", xml->indent_level * 4, ' ')
+#define XML_INDENT() writer_printf(tctx, "%*c", xml->indent_level * 4, ' ')
 
-static void xml_print_section_header(AVTextFormatContext *wctx, const void *data)
+static void xml_print_section_header(AVTextFormatContext *tctx, const void *data)
 {
-    XMLContext *xml = wctx->priv;
-    const AVTextFormatSection *section = tf_get_section(wctx, wctx->level);
-    const AVTextFormatSection *parent_section = tf_get_parent_section(wctx, wctx->level);
+    XMLContext *xml = tctx->priv;
+    const AVTextFormatSection *section = tf_get_section(tctx, tctx->level);
+    const AVTextFormatSection *parent_section = tf_get_parent_section(tctx, tctx->level);
 
     if (!section)
         return;
 
-    if (wctx->level == 0) {
+    if (tctx->level == 0) {
         const char *qual = " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" "
             "xmlns:ffprobe=\"http://www.ffmpeg.org/schema/ffprobe\" "
             "xsi:schemaLocation=\"http://www.ffmpeg.org/schema/ffprobe ffprobe.xsd\"";
 
-        writer_put_str(wctx, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-        writer_printf(wctx, "<%sffprobe%s>\n",
+        writer_put_str(tctx, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+        writer_printf(tctx, "<%sffprobe%s>\n",
                       xml->fully_qualified ? "ffprobe:" : "",
                       xml->fully_qualified ? qual : "");
         return;
@@ -96,60 +96,60 @@ static void xml_print_section_header(AVTextFormatContext *wctx, const void *data
 
     if (xml->within_tag) {
         xml->within_tag = 0;
-        writer_put_str(wctx, ">\n");
+        writer_put_str(tctx, ">\n");
     }
 
     if (parent_section && (parent_section->flags & AV_TEXTFORMAT_SECTION_FLAG_IS_WRAPPER) &&
-        wctx->level && wctx->nb_item[wctx->level - 1])
-        writer_w8(wctx, '\n');
+        tctx->level && tctx->nb_item[tctx->level - 1])
+        writer_w8(tctx, '\n');
     xml->indent_level++;
 
     if (section->flags & (AV_TEXTFORMAT_SECTION_FLAG_IS_ARRAY | AV_TEXTFORMAT_SECTION_FLAG_HAS_VARIABLE_FIELDS)) {
         XML_INDENT();
-        writer_printf(wctx, "<%s", section->name);
+        writer_printf(tctx, "<%s", section->name);
 
         if (section->flags & AV_TEXTFORMAT_SECTION_FLAG_HAS_TYPE) {
             AVBPrint buf;
             av_bprint_init(&buf, 1, AV_BPRINT_SIZE_UNLIMITED);
             av_bprint_escape(&buf, section->get_type(data), NULL,
                              AV_ESCAPE_MODE_XML, AV_ESCAPE_FLAG_XML_DOUBLE_QUOTES);
-            writer_printf(wctx, " type=\"%s\"", buf.str);
+            writer_printf(tctx, " type=\"%s\"", buf.str);
         }
-        writer_printf(wctx, ">\n", section->name);
+        writer_printf(tctx, ">\n", section->name);
     } else {
         XML_INDENT();
-        writer_printf(wctx, "<%s ", section->name);
+        writer_printf(tctx, "<%s ", section->name);
         xml->within_tag = 1;
     }
 }
 
-static void xml_print_section_footer(AVTextFormatContext *wctx)
+static void xml_print_section_footer(AVTextFormatContext *tctx)
 {
-    XMLContext *xml = wctx->priv;
-    const AVTextFormatSection *section = tf_get_section(wctx, wctx->level);
+    XMLContext *xml = tctx->priv;
+    const AVTextFormatSection *section = tf_get_section(tctx, tctx->level);
 
     if (!section)
         return;
 
-    if (wctx->level == 0) {
-        writer_printf(wctx, "</%sffprobe>\n", xml->fully_qualified ? "ffprobe:" : "");
+    if (tctx->level == 0) {
+        writer_printf(tctx, "</%sffprobe>\n", xml->fully_qualified ? "ffprobe:" : "");
     } else if (xml->within_tag) {
         xml->within_tag = 0;
-        writer_put_str(wctx, "/>\n");
+        writer_put_str(tctx, "/>\n");
         xml->indent_level--;
     } else {
         XML_INDENT();
-        writer_printf(wctx, "</%s>\n", section->name);
+        writer_printf(tctx, "</%s>\n", section->name);
         xml->indent_level--;
     }
 }
 
-static void xml_print_value(AVTextFormatContext *wctx, const char *key,
+static void xml_print_value(AVTextFormatContext *tctx, const char *key,
                             const char *str, int64_t num, const int is_int)
 {
     AVBPrint buf;
-    XMLContext *xml = wctx->priv;
-    const AVTextFormatSection *section = tf_get_section(wctx, wctx->level);
+    XMLContext *xml = tctx->priv;
+    const AVTextFormatSection *section = tf_get_section(tctx, tctx->level);
 
     if (!section)
         return;
@@ -161,42 +161,42 @@ static void xml_print_value(AVTextFormatContext *wctx, const char *key,
         XML_INDENT();
         av_bprint_escape(&buf, key, NULL,
                          AV_ESCAPE_MODE_XML, AV_ESCAPE_FLAG_XML_DOUBLE_QUOTES);
-        writer_printf(wctx, "<%s key=\"%s\"",
+        writer_printf(tctx, "<%s key=\"%s\"",
                       section->element_name, buf.str);
         av_bprint_clear(&buf);
 
         if (is_int) {
-            writer_printf(wctx, " value=\"%"PRId64"\"/>\n", num);
+            writer_printf(tctx, " value=\"%"PRId64"\"/>\n", num);
         } else {
             av_bprint_escape(&buf, str, NULL,
                              AV_ESCAPE_MODE_XML, AV_ESCAPE_FLAG_XML_DOUBLE_QUOTES);
-            writer_printf(wctx, " value=\"%s\"/>\n", buf.str);
+            writer_printf(tctx, " value=\"%s\"/>\n", buf.str);
         }
         xml->indent_level--;
     } else {
-        if (wctx->nb_item[wctx->level])
-            writer_w8(wctx, ' ');
+        if (tctx->nb_item[tctx->level])
+            writer_w8(tctx, ' ');
 
         if (is_int) {
-            writer_printf(wctx, "%s=\"%"PRId64"\"", key, num);
+            writer_printf(tctx, "%s=\"%"PRId64"\"", key, num);
         } else {
             av_bprint_escape(&buf, str, NULL,
                              AV_ESCAPE_MODE_XML, AV_ESCAPE_FLAG_XML_DOUBLE_QUOTES);
-            writer_printf(wctx, "%s=\"%s\"", key, buf.str);
+            writer_printf(tctx, "%s=\"%s\"", key, buf.str);
         }
     }
 
     av_bprint_finalize(&buf, NULL);
 }
 
-static inline void xml_print_str(AVTextFormatContext *wctx, const char *key, const char *value)
+static inline void xml_print_str(AVTextFormatContext *tctx, const char *key, const char *value)
 {
-    xml_print_value(wctx, key, value, 0, 0);
+    xml_print_value(tctx, key, value, 0, 0);
 }
 
-static void xml_print_int(AVTextFormatContext *wctx, const char *key, int64_t value)
+static void xml_print_int(AVTextFormatContext *tctx, const char *key, int64_t value)
 {
-    xml_print_value(wctx, key, NULL, value, 1);
+    xml_print_value(tctx, key, NULL, value, 1);
 }
 
 const AVTextFormatter avtextformatter_xml = {

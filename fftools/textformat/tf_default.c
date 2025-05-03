@@ -62,66 +62,66 @@ static inline char *upcase_string(char *dst, size_t dst_size, const char *src)
     return dst;
 }
 
-static void default_print_section_header(AVTextFormatContext *wctx, const void *data)
+static void default_print_section_header(AVTextFormatContext *tctx, const void *data)
 {
-    DefaultContext *def = wctx->priv;
+    DefaultContext *def = tctx->priv;
     char buf[32];
-    const AVTextFormatSection *section = tf_get_section(wctx, wctx->level);
-    const AVTextFormatSection *parent_section = tf_get_parent_section(wctx, wctx->level);
+    const AVTextFormatSection *section = tf_get_section(tctx, tctx->level);
+    const AVTextFormatSection *parent_section = tf_get_parent_section(tctx, tctx->level);
 
     if (!section)
         return;
 
-    av_bprint_clear(&wctx->section_pbuf[wctx->level]);
+    av_bprint_clear(&tctx->section_pbuf[tctx->level]);
     if (parent_section &&
         !(parent_section->flags & (AV_TEXTFORMAT_SECTION_FLAG_IS_WRAPPER | AV_TEXTFORMAT_SECTION_FLAG_IS_ARRAY))) {
-        def->nested_section[wctx->level] = 1;
-        av_bprintf(&wctx->section_pbuf[wctx->level], "%s%s:",
-                   wctx->section_pbuf[wctx->level - 1].str,
+        def->nested_section[tctx->level] = 1;
+        av_bprintf(&tctx->section_pbuf[tctx->level], "%s%s:",
+                   tctx->section_pbuf[tctx->level - 1].str,
                    upcase_string(buf, sizeof(buf),
                                  av_x_if_null(section->element_name, section->name)));
     }
 
-    if (def->noprint_wrappers || def->nested_section[wctx->level])
+    if (def->noprint_wrappers || def->nested_section[tctx->level])
         return;
 
     if (!(section->flags & (AV_TEXTFORMAT_SECTION_FLAG_IS_WRAPPER | AV_TEXTFORMAT_SECTION_FLAG_IS_ARRAY)))
-        writer_printf(wctx, "[%s]\n", upcase_string(buf, sizeof(buf), section->name));
+        writer_printf(tctx, "[%s]\n", upcase_string(buf, sizeof(buf), section->name));
 }
 
-static void default_print_section_footer(AVTextFormatContext *wctx)
+static void default_print_section_footer(AVTextFormatContext *tctx)
 {
-    DefaultContext *def = wctx->priv;
-    const AVTextFormatSection *section = tf_get_section(wctx, wctx->level);
+    DefaultContext *def = tctx->priv;
+    const AVTextFormatSection *section = tf_get_section(tctx, tctx->level);
 
     char buf[32];
 
     if (!section)
         return;
 
-    if (def->noprint_wrappers || def->nested_section[wctx->level])
+    if (def->noprint_wrappers || def->nested_section[tctx->level])
         return;
 
     if (!(section->flags & (AV_TEXTFORMAT_SECTION_FLAG_IS_WRAPPER | AV_TEXTFORMAT_SECTION_FLAG_IS_ARRAY)))
-        writer_printf(wctx, "[/%s]\n", upcase_string(buf, sizeof(buf), section->name));
+        writer_printf(tctx, "[/%s]\n", upcase_string(buf, sizeof(buf), section->name));
 }
 
-static void default_print_str(AVTextFormatContext *wctx, const char *key, const char *value)
+static void default_print_str(AVTextFormatContext *tctx, const char *key, const char *value)
 {
-    DefaultContext *def = wctx->priv;
+    DefaultContext *def = tctx->priv;
 
     if (!def->nokey)
-        writer_printf(wctx, "%s%s=", wctx->section_pbuf[wctx->level].str, key);
-    writer_printf(wctx, "%s\n", value);
+        writer_printf(tctx, "%s%s=", tctx->section_pbuf[tctx->level].str, key);
+    writer_printf(tctx, "%s\n", value);
 }
 
-static void default_print_int(AVTextFormatContext *wctx, const char *key, int64_t value)
+static void default_print_int(AVTextFormatContext *tctx, const char *key, int64_t value)
 {
-    DefaultContext *def = wctx->priv;
+    DefaultContext *def = tctx->priv;
 
     if (!def->nokey)
-        writer_printf(wctx, "%s%s=", wctx->section_pbuf[wctx->level].str, key);
-    writer_printf(wctx, "%"PRId64"\n", value);
+        writer_printf(tctx, "%s%s=", tctx->section_pbuf[tctx->level].str, key);
+    writer_printf(tctx, "%"PRId64"\n", value);
 }
 
 const AVTextFormatter avtextformatter_default = {

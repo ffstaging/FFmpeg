@@ -113,12 +113,12 @@ static const AVOption compact_options[] = {
 
 DEFINE_FORMATTER_CLASS(compact);
 
-static av_cold int compact_init(AVTextFormatContext *wctx)
+static av_cold int compact_init(AVTextFormatContext *tctx)
 {
-    CompactContext *compact = wctx->priv;
+    CompactContext *compact = tctx->priv;
 
     if (strlen(compact->item_sep_str) != 1) {
-        av_log(wctx, AV_LOG_ERROR, "Item separator '%s' specified, but must contain a single character\n",
+        av_log(tctx, AV_LOG_ERROR, "Item separator '%s' specified, but must contain a single character\n",
                compact->item_sep_str);
         return AVERROR(EINVAL);
     }
@@ -131,26 +131,26 @@ static av_cold int compact_init(AVTextFormatContext *wctx)
     } else if (!strcmp(compact->escape_mode_str, "csv" )) {
         compact->escape_str = csv_escape_str;
     } else {
-        av_log(wctx, AV_LOG_ERROR, "Unknown escape mode '%s'\n", compact->escape_mode_str);
+        av_log(tctx, AV_LOG_ERROR, "Unknown escape mode '%s'\n", compact->escape_mode_str);
         return AVERROR(EINVAL);
     }
 
     return 0;
 }
 
-static void compact_print_section_header(AVTextFormatContext *wctx, const void *data)
+static void compact_print_section_header(AVTextFormatContext *tctx, const void *data)
 {
-    CompactContext *compact = wctx->priv;
-    const AVTextFormatSection *section = tf_get_section(wctx, wctx->level);
-    const AVTextFormatSection *parent_section = tf_get_parent_section(wctx, wctx->level);
+    CompactContext *compact = tctx->priv;
+    const AVTextFormatSection *section = tf_get_section(tctx, tctx->level);
+    const AVTextFormatSection *parent_section = tf_get_parent_section(tctx, tctx->level);
 
     if (!section)
         return;
 
-    compact->terminate_line[wctx->level] = 1;
-    compact->has_nested_elems[wctx->level] = 0;
+    compact->terminate_line[tctx->level] = 1;
+    compact->has_nested_elems[tctx->level] = 0;
 
-    av_bprint_clear(&wctx->section_pbuf[wctx->level]);
+    av_bprint_clear(&tctx->section_pbuf[tctx->level]);
     if (parent_section &&
         (section->flags & AV_TEXTFORMAT_SECTION_FLAG_HAS_TYPE ||
             (!(section->flags & AV_TEXTFORMAT_SECTION_FLAG_IS_ARRAY) &&
@@ -159,13 +159,13 @@ static void compact_print_section_header(AVTextFormatContext *wctx, const void *
         /* define a prefix for elements not contained in an array or
            in a wrapper, or for array elements with a type */
         const char *element_name = (char *)av_x_if_null(section->element_name, section->name);
-        AVBPrint *section_pbuf = &wctx->section_pbuf[wctx->level];
+        AVBPrint *section_pbuf = &tctx->section_pbuf[tctx->level];
 
-        compact->nested_section[wctx->level] = 1;
-        compact->has_nested_elems[wctx->level - 1] = 1;
+        compact->nested_section[tctx->level] = 1;
+        compact->has_nested_elems[tctx->level - 1] = 1;
 
         av_bprintf(section_pbuf, "%s%s",
-                   wctx->section_pbuf[wctx->level - 1].str, element_name);
+                   tctx->section_pbuf[tctx->level - 1].str, element_name);
 
         if (section->flags & AV_TEXTFORMAT_SECTION_FLAG_HAS_TYPE) {
             // add /TYPE to prefix
@@ -182,58 +182,58 @@ static void compact_print_section_header(AVTextFormatContext *wctx, const void *
         }
         av_bprint_chars(section_pbuf, ':', 1);
 
-        wctx->nb_item[wctx->level] = wctx->nb_item[wctx->level - 1];
+        tctx->nb_item[tctx->level] = tctx->nb_item[tctx->level - 1];
     } else {
         if (parent_section && !(parent_section->flags & (AV_TEXTFORMAT_SECTION_FLAG_IS_WRAPPER | AV_TEXTFORMAT_SECTION_FLAG_IS_ARRAY)) &&
-            wctx->level && wctx->nb_item[wctx->level - 1])
-            writer_w8(wctx, compact->item_sep);
+            tctx->level && tctx->nb_item[tctx->level - 1])
+            writer_w8(tctx, compact->item_sep);
         if (compact->print_section &&
             !(section->flags & (AV_TEXTFORMAT_SECTION_FLAG_IS_WRAPPER | AV_TEXTFORMAT_SECTION_FLAG_IS_ARRAY)))
-            writer_printf(wctx, "%s%c", section->name, compact->item_sep);
+            writer_printf(tctx, "%s%c", section->name, compact->item_sep);
     }
 }
 
-static void compact_print_section_footer(AVTextFormatContext *wctx)
+static void compact_print_section_footer(AVTextFormatContext *tctx)
 {
-    CompactContext *compact = wctx->priv;
-    const AVTextFormatSection *section = tf_get_section(wctx, wctx->level);
+    CompactContext *compact = tctx->priv;
+    const AVTextFormatSection *section = tf_get_section(tctx, tctx->level);
 
     if (!section)
         return;
 
-    if (!compact->nested_section[wctx->level] &&
-        compact->terminate_line[wctx->level] &&
+    if (!compact->nested_section[tctx->level] &&
+        compact->terminate_line[tctx->level] &&
         !(section->flags & (AV_TEXTFORMAT_SECTION_FLAG_IS_WRAPPER | AV_TEXTFORMAT_SECTION_FLAG_IS_ARRAY)))
-        writer_w8(wctx, '\n');
+        writer_w8(tctx, '\n');
 }
 
-static void compact_print_str(AVTextFormatContext *wctx, const char *key, const char *value)
+static void compact_print_str(AVTextFormatContext *tctx, const char *key, const char *value)
 {
-    CompactContext *compact = wctx->priv;
+    CompactContext *compact = tctx->priv;
     AVBPrint buf;
 
-    if (wctx->nb_item[wctx->level])
-        writer_w8(wctx, compact->item_sep);
+    if (tctx->nb_item[tctx->level])
+        writer_w8(tctx, compact->item_sep);
 
     if (!compact->nokey)
-        writer_printf(wctx, "%s%s=", wctx->section_pbuf[wctx->level].str, key);
+        writer_printf(tctx, "%s%s=", tctx->section_pbuf[tctx->level].str, key);
 
     av_bprint_init(&buf, 1, AV_BPRINT_SIZE_UNLIMITED);
-    writer_put_str(wctx, compact->escape_str(&buf, value, compact->item_sep, wctx));
+    writer_put_str(tctx, compact->escape_str(&buf, value, compact->item_sep, tctx));
     av_bprint_finalize(&buf, NULL);
 }
 
-static void compact_print_int(AVTextFormatContext *wctx, const char *key, int64_t value)
+static void compact_print_int(AVTextFormatContext *tctx, const char *key, int64_t value)
 {
-    CompactContext *compact = wctx->priv;
+    CompactContext *compact = tctx->priv;
 
-    if (wctx->nb_item[wctx->level])
-        writer_w8(wctx, compact->item_sep);
+    if (tctx->nb_item[tctx->level])
+        writer_w8(tctx, compact->item_sep);
 
     if (!compact->nokey)
-        writer_printf(wctx, "%s%s=", wctx->section_pbuf[wctx->level].str, key);
+        writer_printf(tctx, "%s%s=", tctx->section_pbuf[tctx->level].str, key);
 
-    writer_printf(wctx, "%"PRId64, value);
+    writer_printf(tctx, "%"PRId64, value);
 }
 
 const AVTextFormatter avtextformatter_compact = {

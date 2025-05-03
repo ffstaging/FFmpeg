@@ -169,15 +169,15 @@ static const AVOption mermaid_options[] = {
 
 DEFINE_FORMATTER_CLASS(mermaid);
 
-void av_diagram_init(AVTextFormatContext *tfc, AVDiagramConfig *diagram_config)
+void av_diagram_init(AVTextFormatContext *tctx, AVDiagramConfig *diagram_config)
 {
-    MermaidContext *mmc = tfc->priv;
+    MermaidContext *mmc = tctx->priv;
     mmc->diagram_config = diagram_config;
 }
 
-static av_cold int has_link_pair(const AVTextFormatContext *tfc, const char *src, const char *dest)
+static av_cold int has_link_pair(const AVTextFormatContext *tctx, const char *src, const char *dest)
 {
-    MermaidContext *mmc = tfc->priv;
+    MermaidContext *mmc = tctx->priv;
     AVBPrint buf;
 
     av_bprint_init(&buf, 0, AV_BPRINT_SIZE_UNLIMITED);
@@ -191,9 +191,9 @@ static av_cold int has_link_pair(const AVTextFormatContext *tfc, const char *src
     return 0;
 }
 
-static av_cold int mermaid_init(AVTextFormatContext *tfc)
+static av_cold int mermaid_init(AVTextFormatContext *tctx)
 {
-    MermaidContext *mmc = tfc->priv;
+    MermaidContext *mmc = tctx->priv;
 
     av_bprint_init(&mmc->link_buf, 0, AV_BPRINT_SIZE_UNLIMITED);
 
@@ -201,11 +201,11 @@ static av_cold int mermaid_init(AVTextFormatContext *tfc)
     return 0;
 }
 
-static av_cold int mermaid_init_html(AVTextFormatContext *tfc)
+static av_cold int mermaid_init_html(AVTextFormatContext *tctx)
 {
-    MermaidContext *mmc = tfc->priv;
+    MermaidContext *mmc = tctx->priv;
 
-    int ret = mermaid_init(tfc);
+    int ret = mermaid_init(tctx);
 
     if (ret < 0)
         return ret;
@@ -215,9 +215,9 @@ static av_cold int mermaid_init_html(AVTextFormatContext *tfc)
     return 0;
 }
 
-static av_cold int mermaid_uninit(AVTextFormatContext *tfc)
+static av_cold int mermaid_uninit(AVTextFormatContext *tctx)
 {
-    MermaidContext *mmc = tfc->priv;
+    MermaidContext *mmc = tctx->priv;
 
     av_bprint_finalize(&mmc->link_buf, NULL);
     av_dict_free(&mmc->link_dict);
@@ -241,20 +241,20 @@ static void set_str(const char **dst, const char *src)
         *dst = av_strdup(src);
 }
 
-#define MM_INDENT() writer_printf(tfc, "%*c", mmc->indent_level * 2, ' ')
+#define MM_INDENT() writer_printf(tctx, "%*c", mmc->indent_level * 2, ' ')
 
-static void mermaid_print_section_header(AVTextFormatContext *tfc, const void *data)
+static void mermaid_print_section_header(AVTextFormatContext *tctx, const void *data)
 {
-    const AVTextFormatSection *section = tf_get_section(tfc, tfc->level);
-    const AVTextFormatSection *parent_section = tf_get_parent_section(tfc, tfc->level);
+    const AVTextFormatSection *section = tf_get_section(tctx, tctx->level);
+    const AVTextFormatSection *parent_section = tf_get_parent_section(tctx, tctx->level);
 
     if (!section)
         return;
-    AVBPrint *buf = &tfc->section_pbuf[tfc->level];
-    MermaidContext *mmc = tfc->priv;
+    AVBPrint *buf = &tctx->section_pbuf[tctx->level];
+    MermaidContext *mmc = tctx->priv;
     const AVTextFormatSectionContext *sec_ctx = data;
 
-    if (tfc->level == 0) {
+    if (tctx->level == 0) {
         char *directive;
         AVBPrint css_buf;
         const char *diag_directive = mmc->diagram_config->diagram_type == AV_DIAGRAMTYPE_ENTITYRELATIONSHIP ? init_directive_er : init_directive;
@@ -270,24 +270,24 @@ static void mermaid_print_section_header(AVTextFormatContext *tfc, const void *d
             uint64_t length;
             char *token_pos = av_stristr(mmc->diagram_config->html_template, "__###__");
             if (!token_pos) {
-                av_log(tfc, AV_LOG_ERROR, "Unable to locate the required token (__###__) in the html template.");
+                av_log(tctx, AV_LOG_ERROR, "Unable to locate the required token (__###__) in the html template.");
                 return;
             }
 
             length = token_pos - mmc->diagram_config->html_template;
             for (uint64_t i = 0; i < length; i++)
-                writer_w8(tfc, mmc->diagram_config->html_template[i]);
+                writer_w8(tctx, mmc->diagram_config->html_template[i]);
         }
 
-        writer_put_str(tfc, directive);
+        writer_put_str(tctx, directive);
         switch (mmc->diagram_config->diagram_type) {
         case AV_DIAGRAMTYPE_GRAPH:
-            writer_put_str(tfc, "flowchart LR\n");
-        ////writer_put_str(tfc, "  gradient_def@{ shape: text, label: \"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"><defs><linearGradient id=\"ff-filtergradient\" x1=\"0%\" y1=\"0%\" x2=\"0%\" y2=\"100%\"><stop offset=\"0%\" style=\"stop-color:hsla(0, 0%, 30%, 0.02);\"/><stop offset=\"50%\" style=\"stop-color:hsla(0, 0%, 30%, 0);\"/><stop offset=\"100%\" style=\"stop-color:hsla(0, 0%, 30%, 0.05);\"/></linearGradient></defs></svg>\" }\n");
-            writer_put_str(tfc, "  gradient_def@{ shape: text, label: \"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"><defs><linearGradient id=\"ff-filtergradient\" x1=\"0%\" y1=\"0%\" x2=\"0%\" y2=\"100%\"><stop offset=\"0%\" style=\"stop-color:hsl(0, 0%, 98.6%);     \"/><stop offset=\"50%\" style=\"stop-color:hsl(0, 0%, 100%);   \"/><stop offset=\"100%\" style=\"stop-color:hsl(0, 0%, 96.5%);     \"/></linearGradient><radialGradient id=\"ff-radgradient\" cx=\"50%\" cy=\"50%\" r=\"100%\" fx=\"45%\" fy=\"40%\"><stop offset=\"25%\" stop-color=\"hsl(0, 0%, 100%)\" /><stop offset=\"100%\" stop-color=\"hsl(0, 0%, 96%)\" /></radialGradient></defs></svg>\" }\n");
+            writer_put_str(tctx, "flowchart LR\n");
+        ////writer_put_str(tctx, "  gradient_def@{ shape: text, label: \"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"><defs><linearGradient id=\"ff-filtergradient\" x1=\"0%\" y1=\"0%\" x2=\"0%\" y2=\"100%\"><stop offset=\"0%\" style=\"stop-color:hsla(0, 0%, 30%, 0.02);\"/><stop offset=\"50%\" style=\"stop-color:hsla(0, 0%, 30%, 0);\"/><stop offset=\"100%\" style=\"stop-color:hsla(0, 0%, 30%, 0.05);\"/></linearGradient></defs></svg>\" }\n");
+            writer_put_str(tctx, "  gradient_def@{ shape: text, label: \"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"><defs><linearGradient id=\"ff-filtergradient\" x1=\"0%\" y1=\"0%\" x2=\"0%\" y2=\"100%\"><stop offset=\"0%\" style=\"stop-color:hsl(0, 0%, 98.6%);     \"/><stop offset=\"50%\" style=\"stop-color:hsl(0, 0%, 100%);   \"/><stop offset=\"100%\" style=\"stop-color:hsl(0, 0%, 96.5%);     \"/></linearGradient><radialGradient id=\"ff-radgradient\" cx=\"50%\" cy=\"50%\" r=\"100%\" fx=\"45%\" fy=\"40%\"><stop offset=\"25%\" stop-color=\"hsl(0, 0%, 100%)\" /><stop offset=\"100%\" stop-color=\"hsl(0, 0%, 96%)\" /></radialGradient></defs></svg>\" }\n");
             break;
         case AV_DIAGRAMTYPE_ENTITYRELATIONSHIP:
-            writer_put_str(tfc, "erDiagram\n");
+            writer_put_str(tctx, "erDiagram\n");
             break;
         }
 
@@ -298,129 +298,129 @@ static void mermaid_print_section_header(AVTextFormatContext *tfc, const void *d
 
     if (parent_section && parent_section->flags & AV_TEXTFORMAT_SECTION_FLAG_IS_SUBGRAPH) {
 
-        struct section_data parent_sec_data = mmc->section_data[tfc->level - 1];
-        AVBPrint *parent_buf = &tfc->section_pbuf[tfc->level - 1];
+        struct section_data parent_sec_data = mmc->section_data[tctx->level - 1];
+        AVBPrint *parent_buf = &tctx->section_pbuf[tctx->level - 1];
 
         if (parent_sec_data.subgraph_start_incomplete) {
 
             if (parent_buf->len > 0)
-                writer_printf(tfc, "%s", parent_buf->str);
+                writer_printf(tctx, "%s", parent_buf->str);
 
-            writer_put_str(tfc, "</div>\"]\n");
+            writer_put_str(tctx, "</div>\"]\n");
 
-            mmc->section_data[tfc->level - 1].subgraph_start_incomplete = 0;
+            mmc->section_data[tctx->level - 1].subgraph_start_incomplete = 0;
         }
     }
 
-    av_freep(&mmc->section_data[tfc->level].section_id);
-    av_freep(&mmc->section_data[tfc->level].section_type);
-    av_freep(&mmc->section_data[tfc->level].src_id);
-    av_freep(&mmc->section_data[tfc->level].dest_id);
-    mmc->section_data[tfc->level].current_is_textblock = 0;
-    mmc->section_data[tfc->level].current_is_stadium = 0;
-    mmc->section_data[tfc->level].subgraph_start_incomplete = 0;
-    mmc->section_data[tfc->level].link_type = AV_TEXTFORMAT_LINKTYPE_SRCDEST;
+    av_freep(&mmc->section_data[tctx->level].section_id);
+    av_freep(&mmc->section_data[tctx->level].section_type);
+    av_freep(&mmc->section_data[tctx->level].src_id);
+    av_freep(&mmc->section_data[tctx->level].dest_id);
+    mmc->section_data[tctx->level].current_is_textblock = 0;
+    mmc->section_data[tctx->level].current_is_stadium = 0;
+    mmc->section_data[tctx->level].subgraph_start_incomplete = 0;
+    mmc->section_data[tctx->level].link_type = AV_TEXTFORMAT_LINKTYPE_SRCDEST;
 
     // NOTE: av_strdup() allocations aren't checked
     if (section->flags & AV_TEXTFORMAT_SECTION_FLAG_IS_SUBGRAPH) {
 
         av_bprint_clear(buf);
-        writer_put_str(tfc, "\n");
+        writer_put_str(tctx, "\n");
 
         mmc->indent_level++;
 
         if (sec_ctx->context_id) {
             MM_INDENT();
-            writer_printf(tfc, "subgraph %s[\"<div class=\"ff-%s\">", sec_ctx->context_id, section->name);
+            writer_printf(tctx, "subgraph %s[\"<div class=\"ff-%s\">", sec_ctx->context_id, section->name);
         } else {
-            av_log(tfc, AV_LOG_ERROR, "Unable to write subgraph start. Missing id field. Section: %s", section->name);
+            av_log(tctx, AV_LOG_ERROR, "Unable to write subgraph start. Missing id field. Section: %s", section->name);
         }
 
-        mmc->section_data[tfc->level].subgraph_start_incomplete = 1;
-        set_str(&mmc->section_data[tfc->level].section_id, sec_ctx->context_id);
+        mmc->section_data[tctx->level].subgraph_start_incomplete = 1;
+        set_str(&mmc->section_data[tctx->level].section_id, sec_ctx->context_id);
     }
 
     if (section->flags & AV_TEXTFORMAT_SECTION_FLAG_IS_SHAPE) {
 
         av_bprint_clear(buf);
-        writer_put_str(tfc, "\n");
+        writer_put_str(tctx, "\n");
 
         mmc->indent_level++;
 
         if (sec_ctx->context_id) {
 
-            set_str(&mmc->section_data[tfc->level].section_id, sec_ctx->context_id);
+            set_str(&mmc->section_data[tctx->level].section_id, sec_ctx->context_id);
 
             switch (mmc->diagram_config->diagram_type) {
             case AV_DIAGRAMTYPE_GRAPH:
                 if (sec_ctx->context_flags & 1) {
 
                     MM_INDENT();
-                    writer_printf(tfc, "%s@{ shape: text, label: \"", sec_ctx->context_id);
-                    mmc->section_data[tfc->level].current_is_textblock = 1;
+                    writer_printf(tctx, "%s@{ shape: text, label: \"", sec_ctx->context_id);
+                    mmc->section_data[tctx->level].current_is_textblock = 1;
                 } else if (sec_ctx->context_flags & 2) {
 
                     MM_INDENT();
-                    writer_printf(tfc, "%s([\"", sec_ctx->context_id);
-                    mmc->section_data[tfc->level].current_is_stadium = 1;
+                    writer_printf(tctx, "%s([\"", sec_ctx->context_id);
+                    mmc->section_data[tctx->level].current_is_stadium = 1;
                 } else {
                     MM_INDENT();
-                    writer_printf(tfc, "%s(\"", sec_ctx->context_id);
+                    writer_printf(tctx, "%s(\"", sec_ctx->context_id);
                 }
 
                 break;
             case AV_DIAGRAMTYPE_ENTITYRELATIONSHIP:
                 MM_INDENT();
-                writer_printf(tfc, "%s {\n", sec_ctx->context_id);
+                writer_printf(tctx, "%s {\n", sec_ctx->context_id);
                 break;
             }
 
         } else {
-            av_log(tfc, AV_LOG_ERROR, "Unable to write shape start. Missing id field. Section: %s", section->name);
+            av_log(tctx, AV_LOG_ERROR, "Unable to write shape start. Missing id field. Section: %s", section->name);
         }
 
-        set_str(&mmc->section_data[tfc->level].section_id, sec_ctx->context_id);
+        set_str(&mmc->section_data[tctx->level].section_id, sec_ctx->context_id);
     }
 
 
     if (section->flags & AV_TEXTFORMAT_SECTION_PRINT_TAGS) {
 
         if (sec_ctx && sec_ctx->context_type)
-            writer_printf(tfc, "<div class=\"ff-%s %s\">", section->name, sec_ctx->context_type);
+            writer_printf(tctx, "<div class=\"ff-%s %s\">", section->name, sec_ctx->context_type);
         else
-            writer_printf(tfc, "<div class=\"ff-%s\">", section->name);
+            writer_printf(tctx, "<div class=\"ff-%s\">", section->name);
     }
 
 
     if (section->flags & AV_TEXTFORMAT_SECTION_FLAG_HAS_LINKS) {
 
         av_bprint_clear(buf);
-        mmc->nb_link_captions[tfc->level] = 0;
+        mmc->nb_link_captions[tctx->level] = 0;
 
         if (sec_ctx && sec_ctx->context_type)
-            set_str(&mmc->section_data[tfc->level].section_type, sec_ctx->context_type);
+            set_str(&mmc->section_data[tctx->level].section_type, sec_ctx->context_type);
 
         ////if (section->flags & AV_TEXTFORMAT_SECTION_FLAG_HAS_TYPE) {
         ////    AVBPrint buf;
         ////    av_bprint_init(&buf, 1, AV_BPRINT_SIZE_UNLIMITED);
         ////    av_bprint_escape(&buf, section->get_type(data), NULL,
         ////                     AV_ESCAPE_MODE_XML, AV_ESCAPE_FLAG_XML_DOUBLE_QUOTES);
-        ////    writer_printf(tfc, " type=\"%s\"", buf.str);
+        ////    writer_printf(tctx, " type=\"%s\"", buf.str);
     }
 }
 
-static void mermaid_print_section_footer(AVTextFormatContext *tfc)
+static void mermaid_print_section_footer(AVTextFormatContext *tctx)
 {
-    MermaidContext *mmc = tfc->priv;
-    const AVTextFormatSection *section = tf_get_section(tfc, tfc->level);
+    MermaidContext *mmc = tctx->priv;
+    const AVTextFormatSection *section = tf_get_section(tctx, tctx->level);
 
     if (!section)
         return;
-    AVBPrint *buf = &tfc->section_pbuf[tfc->level];
-    struct section_data sec_data = mmc->section_data[tfc->level];
+    AVBPrint *buf = &tctx->section_pbuf[tctx->level];
+    struct section_data sec_data = mmc->section_data[tctx->level];
 
     if (section->flags & AV_TEXTFORMAT_SECTION_PRINT_TAGS)
-        writer_put_str(tfc, "</div>");
+        writer_put_str(tctx, "</div>");
 
     if (section->flags & AV_TEXTFORMAT_SECTION_FLAG_IS_SHAPE) {
 
@@ -428,26 +428,26 @@ static void mermaid_print_section_footer(AVTextFormatContext *tfc)
         case AV_DIAGRAMTYPE_GRAPH:
 
             if (sec_data.current_is_textblock) {
-                writer_printf(tfc, "\"}\n", section->name);
+                writer_printf(tctx, "\"}\n", section->name);
 
                 if (sec_data.section_id) {
                     MM_INDENT();
-                    writer_put_str(tfc, "class ");
-                    writer_put_str(tfc, sec_data.section_id);
-                    writer_put_str(tfc, " ff-");
-                    writer_put_str(tfc, section->name);
-                    writer_put_str(tfc, "\n");
+                    writer_put_str(tctx, "class ");
+                    writer_put_str(tctx, sec_data.section_id);
+                    writer_put_str(tctx, " ff-");
+                    writer_put_str(tctx, section->name);
+                    writer_put_str(tctx, "\n");
                 }
             } else if (sec_data.current_is_stadium) {
-                writer_printf(tfc, "\"]):::ff-%s\n", section->name);
+                writer_printf(tctx, "\"]):::ff-%s\n", section->name);
             } else {
-                writer_printf(tfc, "\"):::ff-%s\n", section->name);
+                writer_printf(tctx, "\"):::ff-%s\n", section->name);
             }
 
             break;
         case AV_DIAGRAMTYPE_ENTITYRELATIONSHIP:
             MM_INDENT();
-            writer_put_str(tfc, "}\n\n");
+            writer_put_str(tctx, "}\n\n");
             break;
         }
 
@@ -456,15 +456,15 @@ static void mermaid_print_section_footer(AVTextFormatContext *tfc)
     } else if ((section->flags & AV_TEXTFORMAT_SECTION_FLAG_IS_SUBGRAPH)) {
 
         MM_INDENT();
-        writer_put_str(tfc, "end\n");
+        writer_put_str(tctx, "end\n");
 
         if (sec_data.section_id) {
             MM_INDENT();
-            writer_put_str(tfc, "class ");
-            writer_put_str(tfc, sec_data.section_id);
-            writer_put_str(tfc, " ff-");
-            writer_put_str(tfc, section->name);
-            writer_put_str(tfc, "\n");
+            writer_put_str(tctx, "class ");
+            writer_put_str(tctx, sec_data.section_id);
+            writer_put_str(tctx, " ff-");
+            writer_put_str(tctx, section->name);
+            writer_put_str(tctx, "\n");
         }
 
         mmc->indent_level--;
@@ -472,7 +472,7 @@ static void mermaid_print_section_footer(AVTextFormatContext *tfc)
 
     if ((section->flags & AV_TEXTFORMAT_SECTION_FLAG_HAS_LINKS))
         if (sec_data.src_id && sec_data.dest_id
-            && !has_link_pair(tfc, sec_data.src_id, sec_data.dest_id))
+            && !has_link_pair(tctx, sec_data.src_id, sec_data.dest_id))
             switch (mmc->diagram_config->diagram_type) {
             case AV_DIAGRAMTYPE_GRAPH:
 
@@ -484,7 +484,7 @@ static void mermaid_print_section_footer(AVTextFormatContext *tfc)
                 if (buf->len > 0) {
                     av_bprintf(&mmc->link_buf, " \"%s", buf->str);
 
-                    for (unsigned i = 0; i < mmc->nb_link_captions[tfc->level]; i++)
+                    for (unsigned i = 0; i < mmc->nb_link_captions[tctx->level]; i++)
                         av_bprintf(&mmc->link_buf, "<br>&nbsp;");
 
                     av_bprintf(&mmc->link_buf, "\" ==");
@@ -521,61 +521,61 @@ static void mermaid_print_section_footer(AVTextFormatContext *tfc)
                 break;
             }
 
-    if (tfc->level == 0) {
+    if (tctx->level == 0) {
 
-        writer_put_str(tfc, "\n");
+        writer_put_str(tctx, "\n");
         if (mmc->create_html) {
             char *token_pos = av_stristr(mmc->diagram_config->html_template, "__###__");
             if (!token_pos) {
-                av_log(tfc, AV_LOG_ERROR, "Unable to locate the required token (__###__) in the html template.");
+                av_log(tctx, AV_LOG_ERROR, "Unable to locate the required token (__###__) in the html template.");
                 return;
             }
             token_pos += strlen("__###__");
-            writer_put_str(tfc, token_pos);
+            writer_put_str(tctx, token_pos);
         }
     }
 
-    if (tfc->level == 1) {
+    if (tctx->level == 1) {
 
         if (mmc->link_buf.len > 0) {
-            writer_put_str(tfc, mmc->link_buf.str);
+            writer_put_str(tctx, mmc->link_buf.str);
             av_bprint_clear(&mmc->link_buf);
         }
 
-        writer_put_str(tfc, "\n");
+        writer_put_str(tctx, "\n");
     }
 }
 
-static void mermaid_print_value(AVTextFormatContext *tfc, const char *key,
+static void mermaid_print_value(AVTextFormatContext *tctx, const char *key,
                                 const char *str, int64_t num, const int is_int)
 {
-    MermaidContext *mmc = tfc->priv;
-    const AVTextFormatSection *section = tf_get_section(tfc, tfc->level);
+    MermaidContext *mmc = tctx->priv;
+    const AVTextFormatSection *section = tf_get_section(tctx, tctx->level);
 
     if (!section)
         return;
 
-    AVBPrint *buf = &tfc->section_pbuf[tfc->level];
-    struct section_data sec_data = mmc->section_data[tfc->level];
+    AVBPrint *buf = &tctx->section_pbuf[tctx->level];
+    struct section_data sec_data = mmc->section_data[tctx->level];
     int exit = 0;
 
     if (section->id_key && !strcmp(section->id_key, key)) {
-        set_str(&mmc->section_data[tfc->level].section_id, str);
+        set_str(&mmc->section_data[tctx->level].section_id, str);
         exit = 1;
     }
 
     if (section->dest_id_key && !strcmp(section->dest_id_key, key)) {
-        set_str(&mmc->section_data[tfc->level].dest_id, str);
+        set_str(&mmc->section_data[tctx->level].dest_id, str);
         exit = 1;
     }
 
     if (section->src_id_key && !strcmp(section->src_id_key, key)) {
-        set_str(&mmc->section_data[tfc->level].src_id, str);
+        set_str(&mmc->section_data[tctx->level].src_id, str);
         exit = 1;
     }
 
     if (section->linktype_key && !strcmp(section->linktype_key, key)) {
-        mmc->section_data[tfc->level].link_type = (AVTextFormatLinkType)num;
+        mmc->section_data[tctx->level].link_type = (AVTextFormatLinkType)num;
         exit = 1;
     }
 
@@ -588,10 +588,10 @@ static void mermaid_print_value(AVTextFormatContext *tfc, const char *key,
         case AV_DIAGRAMTYPE_GRAPH:
 
             if (is_int) {
-                writer_printf(tfc, "<span class=\"%s\">%s: %"PRId64"</span>", key, key, num);
+                writer_printf(tctx, "<span class=\"%s\">%s: %"PRId64"</span>", key, key, num);
             } else {
                 const char *tmp = av_strireplace(str, "\"", "'");
-                writer_printf(tfc, "<span class=\"%s\">%s</span>", key, tmp);
+                writer_printf(tctx, "<span class=\"%s\">%s</span>", key, tmp);
                 av_freep(&tmp);
             }
 
@@ -617,9 +617,9 @@ static void mermaid_print_value(AVTextFormatContext *tfc, const char *key,
                 MM_INDENT();
 
                 if (is_int)
-                    writer_printf(tfc, "    %s %"PRId64" %s\n", key, num, col_type);
+                    writer_printf(tctx, "    %s %"PRId64" %s\n", key, num, col_type);
                 else
-                    writer_printf(tfc, "    %s %s %s\n", key, str, col_type);
+                    writer_printf(tctx, "    %s %s %s\n", key, str, col_type);
             }
             break;
         }
@@ -634,18 +634,18 @@ static void mermaid_print_value(AVTextFormatContext *tfc, const char *key,
         else
             av_bprintf(buf, "<span>%s</span>", str);
 
-        mmc->nb_link_captions[tfc->level]++;
+        mmc->nb_link_captions[tctx->level]++;
     }
 }
 
-static inline void mermaid_print_str(AVTextFormatContext *tfc, const char *key, const char *value)
+static inline void mermaid_print_str(AVTextFormatContext *tctx, const char *key, const char *value)
 {
-    mermaid_print_value(tfc, key, value, 0, 0);
+    mermaid_print_value(tctx, key, value, 0, 0);
 }
 
-static void mermaid_print_int(AVTextFormatContext *tfc, const char *key, int64_t value)
+static void mermaid_print_int(AVTextFormatContext *tctx, const char *key, int64_t value)
 {
-    mermaid_print_value(tfc, key, NULL, value, 1);
+    mermaid_print_value(tctx, key, NULL, value, 1);
 }
 
 const AVTextFormatter avtextformatter_mermaid = {

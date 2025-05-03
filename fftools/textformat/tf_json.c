@@ -49,9 +49,9 @@ static const AVOption json_options[] = {
 
 DEFINE_FORMATTER_CLASS(json);
 
-static av_cold int json_init(AVTextFormatContext *wctx)
+static av_cold int json_init(AVTextFormatContext *tctx)
 {
-    JSONContext *json = wctx->priv;
+    JSONContext *json = tctx->priv;
 
     json->item_sep       = json->compact ? ", " : ",\n";
     json->item_start_end = json->compact ? " "  : "\n";
@@ -84,119 +84,119 @@ static const char *json_escape_str(AVBPrint *dst, const char *src, void *log_ctx
     return dst->str;
 }
 
-#define JSON_INDENT() writer_printf(wctx, "%*c", json->indent_level * 4, ' ')
+#define JSON_INDENT() writer_printf(tctx, "%*c", json->indent_level * 4, ' ')
 
-static void json_print_section_header(AVTextFormatContext *wctx, const void *data)
+static void json_print_section_header(AVTextFormatContext *tctx, const void *data)
 {
-    const AVTextFormatSection *section = tf_get_section(wctx, wctx->level);
-    const AVTextFormatSection *parent_section = tf_get_parent_section(wctx, wctx->level);
-    JSONContext *json = wctx->priv;
+    const AVTextFormatSection *section = tf_get_section(tctx, tctx->level);
+    const AVTextFormatSection *parent_section = tf_get_parent_section(tctx, tctx->level);
+    JSONContext *json = tctx->priv;
     AVBPrint buf;
 
     if (!section)
         return;
 
-    if (wctx->level && wctx->nb_item[wctx->level - 1])
-        writer_put_str(wctx, ",\n");
+    if (tctx->level && tctx->nb_item[tctx->level - 1])
+        writer_put_str(tctx, ",\n");
 
     if (section->flags & AV_TEXTFORMAT_SECTION_FLAG_IS_WRAPPER) {
-        writer_put_str(wctx, "{\n");
+        writer_put_str(tctx, "{\n");
         json->indent_level++;
     } else {
         av_bprint_init(&buf, 1, AV_BPRINT_SIZE_UNLIMITED);
-        json_escape_str(&buf, section->name, wctx);
+        json_escape_str(&buf, section->name, tctx);
         JSON_INDENT();
 
         json->indent_level++;
         if (section->flags & AV_TEXTFORMAT_SECTION_FLAG_IS_ARRAY) {
-            writer_printf(wctx, "\"%s\": [\n", buf.str);
+            writer_printf(tctx, "\"%s\": [\n", buf.str);
         } else if (parent_section && !(parent_section->flags & AV_TEXTFORMAT_SECTION_FLAG_IS_ARRAY)) {
-            writer_printf(wctx, "\"%s\": {%s", buf.str, json->item_start_end);
+            writer_printf(tctx, "\"%s\": {%s", buf.str, json->item_start_end);
         } else {
-            writer_printf(wctx, "{%s", json->item_start_end);
+            writer_printf(tctx, "{%s", json->item_start_end);
 
             /* this is required so the parser can distinguish between packets and frames */
             if (parent_section && parent_section->flags & AV_TEXTFORMAT_SECTION_FLAG_NUMBERING_BY_TYPE) {
                 if (!json->compact)
                     JSON_INDENT();
-                writer_printf(wctx, "\"type\": \"%s\"", section->name);
-                wctx->nb_item[wctx->level]++;
+                writer_printf(tctx, "\"type\": \"%s\"", section->name);
+                tctx->nb_item[tctx->level]++;
             }
         }
         av_bprint_finalize(&buf, NULL);
     }
 }
 
-static void json_print_section_footer(AVTextFormatContext *wctx)
+static void json_print_section_footer(AVTextFormatContext *tctx)
 {
-    const AVTextFormatSection *section = tf_get_section(wctx, wctx->level);
-    JSONContext *json = wctx->priv;
+    const AVTextFormatSection *section = tf_get_section(tctx, tctx->level);
+    JSONContext *json = tctx->priv;
 
     if (!section)
         return;
 
-    if (wctx->level == 0) {
+    if (tctx->level == 0) {
         json->indent_level--;
-        writer_put_str(wctx, "\n}\n");
+        writer_put_str(tctx, "\n}\n");
     } else if (section->flags & AV_TEXTFORMAT_SECTION_FLAG_IS_ARRAY) {
-        writer_w8(wctx, '\n');
+        writer_w8(tctx, '\n');
         json->indent_level--;
         JSON_INDENT();
-        writer_w8(wctx, ']');
+        writer_w8(tctx, ']');
     } else {
-        writer_put_str(wctx, json->item_start_end);
+        writer_put_str(tctx, json->item_start_end);
         json->indent_level--;
         if (!json->compact)
             JSON_INDENT();
-        writer_w8(wctx, '}');
+        writer_w8(tctx, '}');
     }
 }
 
-static inline void json_print_item_str(AVTextFormatContext *wctx,
+static inline void json_print_item_str(AVTextFormatContext *tctx,
                                        const char *key, const char *value)
 {
     AVBPrint buf;
 
     av_bprint_init(&buf, 1, AV_BPRINT_SIZE_UNLIMITED);
-    writer_printf(wctx, "\"%s\":", json_escape_str(&buf, key,   wctx));
+    writer_printf(tctx, "\"%s\":", json_escape_str(&buf, key,   tctx));
     av_bprint_clear(&buf);
-    writer_printf(wctx, " \"%s\"", json_escape_str(&buf, value, wctx));
+    writer_printf(tctx, " \"%s\"", json_escape_str(&buf, value, tctx));
     av_bprint_finalize(&buf, NULL);
 }
 
-static void json_print_str(AVTextFormatContext *wctx, const char *key, const char *value)
+static void json_print_str(AVTextFormatContext *tctx, const char *key, const char *value)
 {
-    const AVTextFormatSection *section = tf_get_section(wctx, wctx->level);
-    const AVTextFormatSection *parent_section = tf_get_parent_section(wctx, wctx->level);
-    JSONContext *json = wctx->priv;
+    const AVTextFormatSection *section = tf_get_section(tctx, tctx->level);
+    const AVTextFormatSection *parent_section = tf_get_parent_section(tctx, tctx->level);
+    JSONContext *json = tctx->priv;
 
     if (!section)
         return;
 
-    if (wctx->nb_item[wctx->level] || (parent_section && parent_section->flags & AV_TEXTFORMAT_SECTION_FLAG_NUMBERING_BY_TYPE))
-        writer_put_str(wctx, json->item_sep);
+    if (tctx->nb_item[tctx->level] || (parent_section && parent_section->flags & AV_TEXTFORMAT_SECTION_FLAG_NUMBERING_BY_TYPE))
+        writer_put_str(tctx, json->item_sep);
     if (!json->compact)
         JSON_INDENT();
-    json_print_item_str(wctx, key, value);
+    json_print_item_str(tctx, key, value);
 }
 
-static void json_print_int(AVTextFormatContext *wctx, const char *key, int64_t value)
+static void json_print_int(AVTextFormatContext *tctx, const char *key, int64_t value)
 {
-    const AVTextFormatSection *section = tf_get_section(wctx, wctx->level);
-    const AVTextFormatSection *parent_section = tf_get_parent_section(wctx, wctx->level);
-    JSONContext *json = wctx->priv;
+    const AVTextFormatSection *section = tf_get_section(tctx, tctx->level);
+    const AVTextFormatSection *parent_section = tf_get_parent_section(tctx, tctx->level);
+    JSONContext *json = tctx->priv;
     AVBPrint buf;
 
     if (!section)
         return;
 
-    if (wctx->nb_item[wctx->level] || (parent_section && parent_section->flags & AV_TEXTFORMAT_SECTION_FLAG_NUMBERING_BY_TYPE))
-        writer_put_str(wctx, json->item_sep);
+    if (tctx->nb_item[tctx->level] || (parent_section && parent_section->flags & AV_TEXTFORMAT_SECTION_FLAG_NUMBERING_BY_TYPE))
+        writer_put_str(tctx, json->item_sep);
     if (!json->compact)
         JSON_INDENT();
 
     av_bprint_init(&buf, 1, AV_BPRINT_SIZE_UNLIMITED);
-    writer_printf(wctx, "\"%s\": %"PRId64, json_escape_str(&buf, key, wctx), value);
+    writer_printf(tctx, "\"%s\": %"PRId64, json_escape_str(&buf, key, tctx), value);
     av_bprint_finalize(&buf, NULL);
 }
 

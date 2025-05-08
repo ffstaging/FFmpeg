@@ -923,6 +923,22 @@ git format-patch -s -o "outputfolder" --add-header "X-Unsent: 1" --suffix .eml -
 Now you'll just need to open the eml file with the email application
 and execute 'Send'.
 
+@subsection FFstaging: Automated GitHub PR to Mailing List submission
+
+This is an easy way which doesn't require writing Git commands or SMTP
+configuration. Basically, it works like this:
+
+@itemize @bullet
+@item
+You make a GitHub Pull Request on https://github.com/ffstaging/FFmpeg
+@item
+You make a comment with "/submit"
+@item
+The PR will be submitted to the FFmpeg Mailing List as regular patches
+@end itemize
+
+More details can be found on the Wiki page of the GitHub repository:
+https://github.com/ffstaging/FFmpeg/wiki
 
 @chapter Patch review process
 

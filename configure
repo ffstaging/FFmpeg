@@ -2374,6 +2374,7 @@ SYSTEM_FEATURES="
     threads
     uwp
     winrt
+    browser_launch
 "
 
 SYSTEM_FUNCS="
@@ -5856,6 +5857,17 @@ case $target_os in
         # because it exceeds segment maximum alignment".
         check_cflags -fno-common
 
+        enable browser_launch
+        if test -n "$sysroot"; then
+            case "$sysroot" in
+                */iPhone*.sdk|\
+                */AppleTV*.sdk|\
+                */WatchOS*.sdk|\
+                */BridgeOS*.sdk)
+                    disable browser_launch
+                    ;;
+            esac
+        fi
         ;;
     msys*)
         die "Native MSYS builds are discouraged, please use the MINGW environment."
@@ -5900,6 +5912,7 @@ case $target_os in
         dlltool="${cross_prefix}dlltool"
         ranlib=:
         enable dos_paths
+        enable browser_launch
         check_ldflags -Wl,--nxcompat,--dynamicbase
         # Lets work around some stupidity in binutils.
         # ld will strip relocations from executables even though we need them
@@ -5942,6 +5955,7 @@ case $target_os in
         enabled x86_64 && objformat="win64" || objformat="win32"
         ranlib=:
         enable dos_paths
+        enable browser_launch
         ;;
     cygwin*)
         target_os=cygwin
@@ -5956,6 +5970,7 @@ case $target_os in
         SHFLAGS='-shared -Wl,--out-implib,$(SUBDIR)lib$(FULLNAME).dll.a'
         enabled x86_64 && objformat="win64" || objformat="win32"
         enable dos_paths
+        enable browser_launch
         ! enabled small && test_cmd $windres --version && enable gnu_windres
         add_cppflags -DWIN32_LEAN_AND_MEAN
         add_cppflags -D_POSIX_C_SOURCE=200112 -D_XOPEN_SOURCE=600
@@ -5968,6 +5983,7 @@ case $target_os in
     linux)
         enable section_data_rel_ro
         enabled_any arm aarch64 && enable_weak linux_perf
+        enable browser_launch
         ;;
     irix*)
         target_os=irix
@@ -7345,6 +7361,7 @@ if enabled uwp; then
     d3d12va_extralibs="-ldxgi -ld3d12"
     vaapi_win32_extralibs="-ldxgi"
     mediafoundation_extralibs="-lmfplat $mediafoundation_extralibs"
+    disable browser_launch
 fi
 
 enabled libdrm &&

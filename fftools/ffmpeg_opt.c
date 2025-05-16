@@ -1749,9 +1749,11 @@ const OptionDef options[] = {
     { "print_graphs_format", OPT_TYPE_STRING, 0,
         { &print_graphs_format },
       "set the output printing format (available formats are: default, compact, csv, flat, ini, json, xml, mermaid, mermaidhtml)", "format" },
+#if HAVE_BROWSER_LAUNCH
     { "sg",   OPT_TYPE_BOOL, 0,
         { &show_graph },
         "create execution graph as temporary html file and try to launch it in the default browser" },
+#endif
     { "auto_conversion_filters", OPT_TYPE_BOOL, OPT_EXPERT,
         { &auto_conversion_filters },
         "enable automatic conversion filters globally" },

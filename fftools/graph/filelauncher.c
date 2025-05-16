@@ -22,6 +22,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if HAVE_BROWSER_LAUNCH
+
 #if defined(_WIN32)
 #  include <windows.h>
 #  include <shellapi.h>
@@ -203,3 +205,12 @@ int ff_make_timestamped_html_name(char *buf, size_t size)
 
 #endif
 }
+
+#else
+
+int ff_open_html_in_browser(const char *html_path)
+{
+    return -1;
+}
+
+#endif // HAVE_BROWSER_LAUNCH

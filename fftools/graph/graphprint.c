@@ -1111,6 +1111,11 @@ int print_filtergraphs(FilterGraph **graphs, int nb_graphs, InputFile **ifiles, 
     int ret;
 
     if (show_graph) {
+#if !HAVE_BROWSER_LAUNCH
+        av_log(NULL, AV_LOG_ERROR, "Show-Graph is not supported on this platform\n");
+        return AVERROR(EINVAL);
+#endif
+
         char buf[2048];
         AVBPrint bp;
 

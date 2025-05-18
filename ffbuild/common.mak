@@ -139,6 +139,10 @@ else
 	$(BIN2C) $(patsubst $(SRC_PATH)/%,$(SRC_LINK)/%,$<) $@ $(subst .,_,$(basename $(notdir $@)))
 endif
 
+%.ptx.o: CCDEP       =
+%.ptx.o: CC_DEPFLAGS =
+
+
 # 1) Preprocess CSS to a minified version
 %.css.min: %.css
 	# Must start with a tab in the real Makefile
@@ -176,6 +180,10 @@ else   # NO COMPRESSION
 %.html.c: %.html $(BIN2CEXE)
 	$(BIN2C) $< $@ $(subst .,_,$(basename $(notdir $@)))
 endif
+
+%.html.o %.css.o: CCDEP       =
+%.html.o %.css.o: CC_DEPFLAGS =
+
 
 clean::
 	$(RM) $(BIN2CEXE) $(CLEANSUFFIXES:%=ffbuild/%)
@@ -228,11 +236,9 @@ ALLHEADERS := $(subst $(SRC_DIR)/,$(SUBDIR),$(wildcard $(SRC_DIR)/*.h $(SRC_DIR)
 SKIPHEADERS += $(ARCH_HEADERS:%=$(ARCH)/%) $(SKIPHEADERS-)
 SKIPHEADERS := $(SKIPHEADERS:%=$(SUBDIR)%)
 HOBJS        = $(filter-out $(SKIPHEADERS:.h=.h.o),$(ALLHEADERS:.h=.h.o))
-PTXOBJS      = $(filter %.ptx.o,$(OBJS))
-RESOURCEOBJS = $(filter %.css.o %.html.o,$(OBJS))
 $(HOBJS):     CCFLAGS += $(CFLAGS_HEADERS)
 checkheaders: $(HOBJS)
-.SECONDARY:   $(HOBJS:.o=.c) $(PTXOBJS:.o=.c) $(PTXOBJS:.o=.gz) $(PTXOBJS:.o=) $(RESOURCEOBJS:.o=.c) $(RESOURCEOBJS:%.css.o=%.css.min) $(RESOURCEOBJS:%.css.o=%.css.min.gz) $(RESOURCEOBJS:%.html.o=%.html.gz) $(RESOURCEOBJS:.o=)
+.SECONDARY:   $(HOBJS:.o=.c)
 
 alltools: $(TOOLS)
 

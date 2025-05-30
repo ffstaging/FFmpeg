@@ -76,7 +76,7 @@ static int decompress_gzip(ResourceManagerContext *ctx, uint8_t *in, unsigned in
     memset(&strm, 0, sizeof(strm));
 
     // Allocate output buffer with extra byte for null termination
-    buf = av_mallocz(chunk + 1);
+    buf = av_realloc(NULL, chunk + 1);
     if (!buf) {
         av_log(ctx, AV_LOG_ERROR, "Failed to allocate decompression buffer\n");
         return AVERROR(ENOMEM);
@@ -92,21 +92,31 @@ static int decompress_gzip(ResourceManagerContext *ctx, uint8_t *in, unsigned in
 
     strm.avail_in  = in_len;
     strm.next_in   = in;
-    strm.avail_out = chunk;
-    strm.next_out  = buf;
 
-    ret = inflate(&strm, Z_FINISH);
-    if (ret != Z_OK && ret != Z_STREAM_END) {
-        av_log(ctx, AV_LOG_ERROR, "Inflate failed: %d, %s\n", ret, strm.msg);
-        inflateEnd(&strm);
-        av_free(buf);
-        return (ret == Z_STREAM_END) ? Z_OK : ((ret == Z_OK) ? Z_BUF_ERROR : ret);
-    }
+    do {
+        strm.avail_out = chunk - strm.total_out;
+        strm.next_out  = buf + strm.total_out;
 
-    if (strm.avail_out == 0) {
-        // TODO: Error or loop decoding?
-        av_log(ctx, AV_LOG_WARNING, "Decompression buffer may be too small\n");
-    }
+        ret = inflate(&strm, Z_FINISH);
+        if (ret != Z_OK && ret != Z_STREAM_END && ret != Z_BUF_ERROR) {
+            av_log(ctx, AV_LOG_ERROR, "Inflate failed: %d, %s\n", ret, strm.msg);
+            inflateEnd(&strm);
+            av_free(buf);
+            return AVERROR(EINVAL);
+        }
+
+        if (strm.avail_out == 0) {
+            chunk *= 8;
+            uint8_t *tmp_buf = av_realloc(buf, chunk + 1);
+            if (!tmp_buf) {
+                inflateEnd(&strm);
+                av_free(buf);
+                return AVERROR(ENOMEM);
+            }
+
+            buf = tmp_buf;
+        }
+    } while (ret != Z_STREAM_END);
 
     *out_len = chunk - strm.avail_out;
     buf[*out_len] = 0; // Ensure null termination

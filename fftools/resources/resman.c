@@ -34,7 +34,6 @@
 #include "resman.h"
 #include "fftools/ffmpeg_filter.h"
 #include "libavutil/avassert.h"
-#include "libavutil/pixdesc.h"
 #include "libavutil/dict.h"
 #include "libavutil/common.h"
 
@@ -61,55 +60,76 @@ typedef struct ResourceManagerContext {
 
 static AVMutex mutex = AV_MUTEX_INITIALIZER;
 
-ResourceManagerContext *resman_ctx = NULL;
+static ResourceManagerContext *resman_ctx = NULL;
 
 
 #if CONFIG_RESOURCE_COMPRESSION
 
 static int decompress_gzip(ResourceManagerContext *ctx, uint8_t *in, unsigned in_len, char **out, size_t *out_len)
 {
-    z_stream strm;
-    unsigned chunk = 65534;
+    z_stream strm = { 0 };
+    uint8_t dummy[4096];
+    size_t uncompressed_size;
     int ret;
     uint8_t *buf;
 
     *out = NULL;
-    memset(&strm, 0, sizeof(strm));
-
-    // Allocate output buffer with extra byte for null termination
-    buf = (uint8_t *)av_mallocz(chunk + 1);
-    if (!buf) {
-        av_log(ctx, AV_LOG_ERROR, "Failed to allocate decompression buffer\n");
-        return AVERROR(ENOMEM);
-    }
 
     // 15 + 16 tells zlib to detect GZIP or zlib automatically
     ret = inflateInit2(&strm, 15 + 16);
     if (ret != Z_OK) {
         av_log(ctx, AV_LOG_ERROR, "Error during zlib initialization: %s\n", strm.msg);
+        return AVERROR(ENOSYS);
+    }
+
+    strm.avail_in  = in_len;
+    strm.next_in   = in;
+
+    do {
+        strm.avail_out = sizeof(dummy);
+        strm.next_out  = dummy;
+
+        ret = inflate(&strm, Z_NO_FLUSH);
+        if (ret != Z_OK && ret != Z_STREAM_END) {
+            av_log(ctx, AV_LOG_ERROR, "Inflate failed (1): %d, %s\n", ret, strm.msg);
+            inflateEnd(&strm);
+            return AVERROR(EINVAL);
+        }
+    } while (ret != Z_STREAM_END);
+
+    uncompressed_size = strm.total_out;
+
+    // Allocate output buffer with extra byte for null termination
+    buf = av_mallocz(uncompressed_size + 1);
+    if (!buf) {
+        av_log(ctx, AV_LOG_ERROR, "Failed to allocate decompression buffer\n");
+        inflateEnd(&strm);
+        return AVERROR(ENOMEM);
+    }
+
+    ret = inflateReset(&strm);
+    if (ret != Z_OK) {
+        av_log(ctx, AV_LOG_ERROR, "inflateReset failed: %s\n", strm.msg);
         av_free(buf);
         return AVERROR(ENOSYS);
     }
 
     strm.avail_in  = in_len;
     strm.next_in   = in;
-    strm.avail_out = chunk;
+    strm.avail_out = uncompressed_size;
     strm.next_out  = buf;
 
     ret = inflate(&strm, Z_FINISH);
     if (ret != Z_OK && ret != Z_STREAM_END) {
-        av_log(ctx, AV_LOG_ERROR, "Inflate failed: %d, %s\n", ret, strm.msg);
+        av_log(ctx, AV_LOG_ERROR, "Inflate failed (2): %d, %s\n", ret, strm.msg);
         inflateEnd(&strm);
         av_free(buf);
-        return (ret == Z_STREAM_END) ? Z_OK : ((ret == Z_OK) ? Z_BUF_ERROR : ret);
+        return AVERROR(EINVAL);
     }
 
-    if (strm.avail_out == 0) {
-        // TODO: Error or loop decoding?
-        av_log(ctx, AV_LOG_WARNING, "Decompression buffer may be too small\n");
-    }
+    av_assert0(strm.avail_out == 0);
 
-    *out_len = chunk - strm.avail_out;
+    *out_len = uncompressed_size;
     buf[*out_len] = 0; // Ensure null termination
 
     inflateEnd(&strm);
@@ -156,7 +176,7 @@ void ff_resman_uninit(void)
 }
 
 
-char *ff_resman_get_string(FFResourceId resource_id)
+const char *ff_resman_get_string(FFResourceId resource_id)
 {
     ResourceManagerContext *ctx               = get_resman_context();
     FFResourceDefinition resource_definition = { 0 };

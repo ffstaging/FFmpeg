@@ -22,6 +22,8 @@ OBJS-ffmpeg +=                  \
     fftools/ffmpeg_opt.o        \
     fftools/ffmpeg_sched.o      \
     fftools/graph/graphprint.o        \
+    fftools/graph/filelauncher.o      \
+    fftools/graph/_system.o      \
     fftools/sync_queue.o        \
     fftools/thread_queue.o      \
     fftools/textformat/avtextformat.o \

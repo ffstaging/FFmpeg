@@ -31,8 +31,10 @@ av_cold void ff_fdctdsp_init_x86(FDCTDSPContext *c, AVCodecContext *avctx,
 
     if (!high_bit_depth) {
         if ((dct_algo == FF_DCT_AUTO || dct_algo == FF_DCT_MMX)) {
+#if HAVE_SSE2_INLINE
             if (INLINE_SSE2(cpu_flags))
                 c->fdct = ff_fdct_sse2;
+#endif
         }
     }
 }

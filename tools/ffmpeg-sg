@@ -1,0 +1,249 @@
+#!/bin/bash
+#
+# ffmpeg-sg - FFmpeg Show-Graph Wrapper (aka killer feature)
+#             Show the FFmpeg execution graph in default browser 
+#
+# Copyright (c) 2025 softworkz
+#
+# This file is part of FFmpeg.
+#
+# FFmpeg is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+#
+# FFmpeg is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with FFmpeg; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+#
+
+set -euo pipefail
+
+# Check for privilege level
+check_privileges() {
+    # Check if running as root (UID 0)
+    if [ "$(id -u)" -eq 0 ]; then
+        echo "Error: This script should not be run as root for security reasons." >&2
+        echo "Media processing and browser launching do not require root privileges." >&2
+        exit 1
+    fi
+    
+    # Check if running as sudo
+    if [ -n "${SUDO_USER:-}" ] || [ -n "${SUDO_UID:-}" ]; then
+        echo "Error: This script should not be run with sudo for security reasons." >&2
+        echo "Please run as a regular user: ./ffmpeg-sg [options]" >&2
+        exit 1
+    fi
+    
+    # Check other privilege indicators
+    if [ -n "${PKEXEC_UID:-}" ]; then
+        echo "Error: This script should not be run with elevated privileges (pkexec)." >&2
+        exit 1
+    fi
+}
+
+# Validate path chars
+validate_path() {
+    local path="$1"
+    case "$path" in
+        *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/_.-]*)
+            echo "Error: Invalid characters in path: $path" >&2
+            return 1
+            ;;
+    esac
+    return 0
+}
+
+# Get secure temp folder
+get_temp_dir() {
+    local uid=$(id -u)
+    local temp_bases=("/tmp" "/var/tmp")
+    
+    for base in "${temp_bases[@]}"; do
+        local temp_dir="$base/ffmpeg-$uid"
+        
+        if ! validate_path "$temp_dir"; then
+            continue
+        fi
+        
+        # Verify perms and owner
+        if [ -d "$temp_dir" ]; then
+            local perms=$(stat -c %a "$temp_dir" 2>/dev/null || echo "")
+            if [ "$perms" != "700" ]; then
+                echo "Error: Temp directory exists with unsafe permissions ($perms). Expected 700." >&2
+                exit 1
+            fi
+            
+            local owner=$(stat -c %u "$temp_dir" 2>/dev/null || echo "")
+            if [ "$owner" != "$uid" ]; then
+                echo "Error: Temp directory not owned by current user." >&2
+                exit 1
+            fi
+        else
+            # Create folder
+            if ! mkdir -m 700 "$temp_dir" 2>/dev/null; then
+                continue
+            fi
+        fi
+        
+        echo "$temp_dir"
+        return 0
+    done
+    
+    echo "Error: Unable to determine temp directory." >&2
+    exit 1
+}
+
+# Create HTML filename and pre-create file
+create_unique_html_file() {
+    local temp_dir="$1"
+    local base_timestamp=$(date '+%Y-%m-%d_%H-%M-%S')
+    local base_milliseconds=$(date '+%3N')
+    
+    local filename="ffmpeg_graph_${base_timestamp}_${base_milliseconds}.html"
+    local full_path="$temp_dir/$filename"
+    
+    if ! validate_path "$full_path"; then
+        echo "Error: Generated invalid file path." >&2
+        exit 1
+    fi
+    
+    if (set -C; echo "<!-- FFmpeg Graph Placeholder -->" > "$full_path") 2>/dev/null; then
+        echo "$full_path"
+        return 0
+    fi
+    
+    echo "Error: Could not create unique HTML file." >&2
+    exit 1
+}
+
+# Check for xdg-open
+check_xdg_open() {
+    # Accept only standard system locations - no PATH lookup
+    local xdg_locations=("/usr/bin/xdg-open" "/bin/xdg-open" "/usr/local/bin/xdg-open")
+    
+    for location in "${xdg_locations[@]}"; do
+        if [ -x "$location" ]; then
+            echo "$location"
+            return 0
+        fi
+    done
+    
+    echo "Error: xdg-open not found in standard system locations." >&2
+    echo "Checked: ${xdg_locations[*]}" >&2
+    return 1
+}
+
+# Launch browser
+open_html_in_browser() {
+    local html_path="$1"
+    
+    if [ ! -f "$html_path" ]; then
+        echo "Warning: HTML file not found: $html_path" >&2
+        return 1
+    fi
+    
+    # Validate again
+    if ! validate_path "$html_path"; then
+        echo "Error: Invalid file path for browser: $html_path" >&2
+        return 1
+    fi
+    
+    local xdg_open_path
+    xdg_open_path=$(check_xdg_open)
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+    
+    # Launch browser
+    "$xdg_open_path" "$html_path" </dev/null >/dev/null 2>&1 &
+    
+    if [ $? -eq 0 ]; then
+        echo "Execution graph opened in browser: $html_path" >&2
+        return 0
+    else
+        echo "Warning: Could not open '$html_path' in a browser." >&2
+        return 1
+    fi
+}
+
+# Check for conflicting parameters
+check_conflicting_params() {
+    local args=("$@")
+    
+    for arg in "${args[@]}"; do
+        case "$arg" in
+            -print_graphs_file)
+                echo "Error: -print_graphs_file parameter already provided. This script manages graph file generation automatically." >&2
+                exit 1
+                ;;
+            -print_graphs_format)
+                echo "Error: -print_graphs_format parameter already provided. This script uses mermaidhtml format automatically." >&2
+                exit 1
+                ;;
+        esac
+    done
+}
+
+# Cleanup temp file on signal
+cleanup_on_signal() {
+    local html_file="$1"
+    if [ -f "$html_file" ]; then
+        rm -f "$html_file" 2>/dev/null || true
+    fi
+    exit 130  # 128 + SIGINT
+}
+
+main() {
+    check_privileges
+    
+    # Check if ffmpeg exists in current dir
+    if [ ! -x "./ffmpeg" ]; then
+        echo "Error: ./ffmpeg not found or not executable in current directory." >&2
+        exit 1
+    fi
+    
+    # Check params
+    check_conflicting_params "$@"
+    
+    local temp_dir
+    temp_dir=$(get_temp_dir)
+    
+    local html_file
+    html_file=$(create_unique_html_file "$temp_dir")
+    
+    trap "cleanup_on_signal '$html_file'" INT TERM
+    
+    # Set umask for file creation
+    umask 077
+    
+    # Execute ffmpeg with graph printing options and all passed arguments
+    local ffmpeg_exit_code=0
+    ./ffmpeg -print_graphs_file "$html_file" -print_graphs_format mermaidhtml "$@" || ffmpeg_exit_code=$?
+    
+    trap - INT TERM
+    
+    # Open browser
+    if [ -f "$html_file" ]; then
+        local file_size=$(stat -c%s "$html_file" 2>/dev/null || echo 0)
+        local placeholder_size=34 
+        
+        if [ "$file_size" -gt "$placeholder_size" ]; then
+            open_html_in_browser "$html_file"
+        else
+            echo "Warning: FFmpeg completed but no graph data was written." >&2
+        fi
+    else
+        echo "Warning: FFmpeg completed but no graph file was found." >&2
+    fi
+    
+    # Exit with ffmpeg exit code
+    exit $ffmpeg_exit_code
+}
+
+main "$@"

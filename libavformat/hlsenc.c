@@ -329,6 +329,23 @@ static int hlsenc_io_close(AVFormatContext *s, AVIOContext **pb, char *filename)
     return ret;
 }
 
+static int get_last_separator_pos(const char *path)
+{
+    if (!path || *path == '\0')
+        return -1;
+
+    char *p = strrchr(path, '/');
+#if HAVE_DOS_PATHS
+    char *q = strrchr(path, '\\');
+    p = FFMAX(p, q);
+#endif
+
+    if (!p)
+        return -1;
+
+    return p - path;
+}
+
 static void set_http_options(AVFormatContext *s, AVDictionary **options, HLSContext *c)
 {
     int http_base_proto = ff_is_http_proto(s->url);
@@ -1408,14 +1425,10 @@ static int hls_rename_temp_file(AVFormatContext *s, AVFormatContext *oc)
 
 static const char* get_relative_url(const char *master_url, const char *media_url)
 {
-    const char *p = strrchr(master_url, '/');
-    size_t base_len = 0;
+    int pos = get_last_separator_pos(master_url);
 
-    if (!p) p = strrchr(master_url, '\\');
-
-    if (p) {
-        base_len = p - master_url;
-        if (av_strncasecmp(master_url, media_url, base_len)) {
+    if (pos >= 0) {
+        if (av_strncasecmp(master_url, media_url, pos)) {
             av_log(NULL, AV_LOG_WARNING, "Unable to find relative url\n");
             return NULL;
         }
@@ -1423,7 +1436,7 @@ static const char* get_relative_url(const char *master_url, const char *media_ur
         return media_url;
     }
 
-    return media_url + base_len + 1;
+    return media_url + pos + 1;
 }
 
 static int64_t get_stream_bit_rate(AVStream *stream)
@@ -3151,13 +3164,13 @@ static int hls_init(AVFormatContext *s)
                     vs->fmp4_init_filename = expanded;
                 }
 
-                p = strrchr(vs->m3u8_name, '/');
-                if (p) {
-                    char tmp = *(++p);
-                    *p = '\0';
-                    vs->base_output_dirname = av_asprintf("%s%s", vs->m3u8_name,
-                                                          vs->fmp4_init_filename);
-                    *p = tmp;
+                int pos = get_last_separator_pos(vs->m3u8_name);
+                if (pos >= 0) {
+                    AVBPrint buf;
+                    av_bprint_init(&buf, 0, AV_BPRINT_SIZE_UNLIMITED);
+                    av_bprint_append_data(&buf, vs->m3u8_name, pos + 1);
+                    av_bprintf(&buf, "%s", vs->fmp4_init_filename);
+                    av_bprint_finalize(&buf, &vs->base_output_dirname);
                 } else {
                     vs->base_output_dirname = av_strdup(vs->fmp4_init_filename);
                 }

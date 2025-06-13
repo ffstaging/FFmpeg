@@ -20,7 +20,7 @@
 
 /**
  * @file generic segmenter
- * M3U8 specification can be find here:
+ * M3U8 specification can be found here:
  * @url{http://tools.ietf.org/id/draft-pantos-http-live-streaming}
  */
 

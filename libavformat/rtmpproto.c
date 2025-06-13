@@ -1263,7 +1263,8 @@ static int rtmp_handshake(URLContext *s, RTMPContext *rt)
     for (i = 9; i <= RTMP_HANDSHAKE_PACKET_SIZE; i++)
         tosend[i] = av_lfg_get(&rnd) >> 24;
 
-    if (CONFIG_FFRTMPCRYPT_PROTOCOL && rt->encrypted) {
+#if CONFIG_FFRTMPCRYPT_PROTOCOL
+    if (rt->encrypted) {
         /* When the client wants to use RTMPE, we have to change the command
          * byte to 0x06 which means to use encrypted data and we have to set
          * the flash version to at least 9.0.115.0. */
@@ -1278,6 +1279,7 @@ static int rtmp_handshake(URLContext *s, RTMPContext *rt)
         if ((ret = ff_rtmpe_gen_pub_key(rt->stream, tosend + 1)) < 0)
             return ret;
     }
+#endif
 
     client_pos = rtmp_handshake_imprint_with_digest(tosend + 1, rt->encrypted);
     if (client_pos < 0)
@@ -1341,7 +1343,8 @@ static int rtmp_handshake(URLContext *s, RTMPContext *rt)
         if (ret < 0)
             return ret;
 
-        if (CONFIG_FFRTMPCRYPT_PROTOCOL && rt->encrypted) {
+#if CONFIG_FFRTMPCRYPT_PROTOCOL
+        if (rt->encrypted) {
             /* Compute the shared secret key sent by the server and initialize
              * the RC4 encryption. */
             if ((ret = ff_rtmpe_compute_secret_key(rt->stream, serverdata + 1,
@@ -1351,6 +1354,7 @@ static int rtmp_handshake(URLContext *s, RTMPContext *rt)
             /* Encrypt the signature received by the server. */
             ff_rtmpe_encrypt_sig(rt->stream, signature, digest, serverdata[0]);
         }
+#endif
 
         if (memcmp(signature, clientdata + RTMP_HANDSHAKE_PACKET_SIZE - 32, 32)) {
             av_log(s, AV_LOG_ERROR, "Signature mismatch\n");
@@ -1371,25 +1375,32 @@ static int rtmp_handshake(URLContext *s, RTMPContext *rt)
         if (ret < 0)
             return ret;
 
-        if (CONFIG_FFRTMPCRYPT_PROTOCOL && rt->encrypted) {
+#if CONFIG_FFRTMPCRYPT_PROTOCOL
+        if (rt->encrypted) {
             /* Encrypt the signature to be send to the server. */
             ff_rtmpe_encrypt_sig(rt->stream, tosend +
                                  RTMP_HANDSHAKE_PACKET_SIZE - 32, digest,
                                  serverdata[0]);
         }
+#endif
 
         // write reply back to the server
         if ((ret = ffurl_write(rt->stream, tosend,
                                RTMP_HANDSHAKE_PACKET_SIZE)) < 0)
             return ret;
 
-        if (CONFIG_FFRTMPCRYPT_PROTOCOL && rt->encrypted) {
+#if CONFIG_FFRTMPCRYPT_PROTOCOL
+        if (rt->encrypted) {
             /* Set RC4 keys for encryption and update the keystreams. */
             if ((ret = ff_rtmpe_update_keystream(rt->stream)) < 0)
                 return ret;
         }
+#endif
+
     } else {
-        if (CONFIG_FFRTMPCRYPT_PROTOCOL && rt->encrypted) {
+
+#if CONFIG_FFRTMPCRYPT_PROTOCOL
+        if (rt->encrypted) {
             /* Compute the shared secret key sent by the server and initialize
              * the RC4 encryption. */
             if ((ret = ff_rtmpe_compute_secret_key(rt->stream, serverdata + 1,
@@ -1402,16 +1413,20 @@ static int rtmp_handshake(URLContext *s, RTMPContext *rt)
                                      serverdata[0]);
             }
         }
+#endif
 
         if ((ret = ffurl_write(rt->stream, serverdata + 1,
                                RTMP_HANDSHAKE_PACKET_SIZE)) < 0)
             return ret;
 
-        if (CONFIG_FFRTMPCRYPT_PROTOCOL && rt->encrypted) {
+#if CONFIG_FFRTMPCRYPT_PROTOCOL
+        if (rt->encrypted) {
             /* Set RC4 keys for encryption and update the keystreams. */
             if ((ret = ff_rtmpe_update_keystream(rt->stream)) < 0)
                 return ret;
         }
+#endif
+
     }
 
     return 0;

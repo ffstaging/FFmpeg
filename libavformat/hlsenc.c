@@ -2703,6 +2703,12 @@ static int hls_write_packet(AVFormatContext *s, AVPacket *pkt)
         if (ret < 0)
             return ret;
 
+        if (oc->url[0]) {
+            av_log(s, AV_LOG_VERBOSE, "SegmentComplete=%s:%d Index=%d StartPts=%"PRId64" EndPts=%"PRId64" Duration=%f filename=%s\n",
+                   av_get_media_type_string(vs->streams[stream_index]->codecpar->codec_type),
+                   stream_index, vs->number, vs->start_pts, vs->end_pts, vs->duration, av_basename(oc->url));
+        }
+
         old_filename = av_strdup(oc->url);
         if (!old_filename) {
             return AVERROR(ENOMEM);

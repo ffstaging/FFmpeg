@@ -3505,6 +3505,11 @@ argument must be a time duration specification, and defaults to 0.
 If enabled, write an empty segment if there are no packets during the period a
 segment would usually span. Otherwise, the segment will be filled with the next
 packet written. Defaults to @code{0}.
+
+@item segment_write_temp @var{1|0}
+Write segments to files with a .tmp extension. Each file is renamed to its 
+actual name on completion. This can help to prevent segment files from 
+being accessed before they are complete. Disabled by default (@code{0}).
 @end table
 
 Make sure to require a closed GOP when encoding and to set the GOP

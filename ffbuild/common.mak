@@ -142,11 +142,11 @@ endif
 # 1) Preprocess CSS to a minified version
 %.css.min: TAG = SED
 %.css.min: %.css
-	$(M)sed 's!/\\*.*\\*/!!g' $< \
-	| tr '\n' ' ' \
-	| tr -s ' ' \
-	| sed 's/^ //; s/ $$//' \
-	> $@
+    $(M)sed 's!/\\*.*\\*/!!g' $(subst \,/,$<) \
+        | tr '\n' ' ' \
+        | tr -s ' ' \
+        | sed 's/^ //; s/ $$//' \
+        > $@
 
 ifdef CONFIG_RESOURCE_COMPRESSION
 
@@ -166,17 +166,17 @@ ifdef CONFIG_RESOURCE_COMPRESSION
 
 # 5) Convert the gzipped HTML to a .c array
 %.html.c: %.html.gz $(BIN2CEXE)
-	$(BIN2C) $< $@ $(subst .,_,$(basename $(notdir $@)))
+	$(BIN2C) $(patsubst $(SRC_PATH)/%,$(SRC_LINK)/%,$<) $@ $(subst .,_,$(basename $(notdir $@)))
 
 else   # NO COMPRESSION
 
 # 2) Convert the minified CSS to a .c array
 %.css.c: %.css.min $(BIN2CEXE)
-	$(BIN2C) $< $@ $(subst .,_,$(basename $(notdir $@)))
+	$(BIN2C) $(patsubst $(SRC_PATH)/%,$(SRC_LINK)/%,$<) $@ $(subst .,_,$(basename $(notdir $@)))
 
 # 3) Convert the plain HTML to a .c array
 %.html.c: %.html $(BIN2CEXE)
-	$(BIN2C) $< $@ $(subst .,_,$(basename $(notdir $@)))
+	$(BIN2C) $(patsubst $(SRC_PATH)/%,$(SRC_LINK)/%,$<) $@ $(subst .,_,$(basename $(notdir $@)))
 endif
 
 clean::

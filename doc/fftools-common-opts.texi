@@ -230,6 +230,8 @@ log to file.
 Indicates that log lines should be prefixed with time information.
 @item datetime
 Indicates that log lines should be prefixed with date and time information.
+@item mem
+Indicates that context prefixes should be printed with memory address.
 @end table
 Flags can also be used alone by adding a '+'/'-' prefix to set/reset a single
 flag without affecting other @var{flags} or changing @var{loglevel}. When

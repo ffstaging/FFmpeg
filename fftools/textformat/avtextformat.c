@@ -209,8 +209,8 @@ int avtext_context_open(AVTextFormatContext **ptctx, const AVTextFormatter *form
 
     /* validate replace string */
     {
-        const uint8_t *p = (uint8_t *)tctx->string_validation_replacement;
-        const uint8_t *endp = p + strlen((const char *)p);
+        const uint8_t *p = tctx->string_validation_replacement;
+        const uint8_t *endp = p + strlen(p);
         while (*p) {
             const uint8_t *p0 = p;
             int32_t code;
@@ -313,7 +313,7 @@ void avtext_print_integer(AVTextFormatContext *tctx, const char *key, int64_t va
 
 static inline int validate_string(AVTextFormatContext *tctx, char **dstp, const char *src)
 {
-    const uint8_t *p, *endp, *srcp = (const uint8_t *)src;
+    const uint8_t *p, *endp, *srcp = src;
     AVBPrint dstbuf;
     AVBPrint invalid_seq;
     int invalid_chars_nb = 0, ret = 0;
@@ -557,7 +557,7 @@ void avtext_print_data_hash(AVTextFormatContext *tctx, const char *key,
     av_hash_init(tctx->hash);
     av_hash_update(tctx->hash, data, size);
     len = snprintf(buf, sizeof(buf), "%s:", av_hash_get_name(tctx->hash));
-    av_hash_final_hex(tctx->hash, (uint8_t *)&buf[len], (int)sizeof(buf) - len);
+    av_hash_final_hex(tctx->hash, &buf[len], (int)sizeof(buf) - len);
     avtext_print_string(tctx, key, buf, 0);
 }
 

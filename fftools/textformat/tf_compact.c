@@ -158,7 +158,7 @@ static void compact_print_section_header(AVTextFormatContext *tctx, const void *
 
         /* define a prefix for elements not contained in an array or
            in a wrapper, or for array elements with a type */
-        const char *element_name = (char *)av_x_if_null(section->element_name, section->name);
+        const char *element_name = av_x_if_null(section->element_name, section->name);
         AVBPrint *section_pbuf = &tctx->section_pbuf[tctx->level];
 
         compact->nested_section[tctx->level] = 1;

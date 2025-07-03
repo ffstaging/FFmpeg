@@ -76,7 +76,7 @@ static int decompress_gzip(ResourceManagerContext *ctx, uint8_t *in, unsigned in
     memset(&strm, 0, sizeof(strm));
 
     // Allocate output buffer with extra byte for null termination
-    buf = (uint8_t *)av_mallocz(chunk + 1);
+    buf = av_mallocz(chunk + 1);
     if (!buf) {
         av_log(ctx, AV_LOG_ERROR, "Failed to allocate decompression buffer\n");
         return AVERROR(ENOMEM);
@@ -112,7 +112,7 @@ static int decompress_gzip(ResourceManagerContext *ctx, uint8_t *in, unsigned in
     buf[*out_len] = 0; // Ensure null termination
 
     inflateEnd(&strm);
-    *out = (char *)buf;
+    *out = buf;
     return Z_OK;
 }
 #endif
@@ -156,7 +156,7 @@ char *ff_resman_get_string(FFResourceId resource_id)
         char *out = NULL;
         size_t out_len;
 
-        int ret = decompress_gzip(ctx, (uint8_t *)resource_definition.data, *resource_definition.data_len, &out, &out_len);
+        int ret = decompress_gzip(ctx, resource_definition.data, *resource_definition.data_len, &out, &out_len);
 
         if (ret) {
             av_log(ctx, AV_LOG_ERROR, "Unable to decompress the resource with ID %d\n", resource_id);

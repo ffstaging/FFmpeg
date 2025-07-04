@@ -484,6 +484,7 @@ static int opus_decode_packet(AVCodecContext *avctx, AVFrame *frame,
     int coded_samples   = 0;
     int decoded_samples = INT_MAX;
     int delayed_samples = 0;
+    int subpacket_size  = 0;
     int i, ret;
 
     /* calculate the number of delayed samples */
@@ -504,6 +505,7 @@ static int opus_decode_packet(AVCodecContext *avctx, AVFrame *frame,
             return ret;
         }
         coded_samples += pkt->frame_count * pkt->frame_duration;
+        subpacket_size = pkt->packet_size;
         c->streams[0].silk_samplerate = get_silk_samplerate(pkt->config);
     }
 
@@ -575,6 +577,7 @@ static int opus_decode_packet(AVCodecContext *avctx, AVFrame *frame,
                 return AVERROR_INVALIDDATA;
             }
 
+            subpacket_size     = s->packet.packet_size;
             s->silk_samplerate = get_silk_samplerate(s->packet.config);
         }
 
@@ -585,8 +588,8 @@ static int opus_decode_packet(AVCodecContext *avctx, AVFrame *frame,
         s->decoded_samples = ret;
         decoded_samples       = FFMIN(decoded_samples, ret);
 
-        buf      += s->packet.packet_size;
-        buf_size -= s->packet.packet_size;
+        buf       = FF_PTR_ADD(buf, subpacket_size);
+        buf_size -= subpacket_size;
     }
 
     /* buffer the extra samples */

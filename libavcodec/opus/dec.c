@@ -323,7 +323,7 @@ static int opus_decode_frame(OpusStreamContext *s, const uint8_t *data, int size
             } else {
                 av_log(s->avctx, AV_LOG_WARNING,
                        "Spurious CELT delay samples present.\n");
-                av_audio_fifo_drain(s->celt_delay, delay_samples);
+                av_audio_fifo_reset(s->celt_delay);
                 if (s->avctx->err_recognition & AV_EF_EXPLODE)
                     return AVERROR_BUG;
             }
@@ -393,9 +393,7 @@ static int opus_decode_frame(OpusStreamContext *s, const uint8_t *data, int size
     return samples;
 }
 
-static int opus_decode_subpacket(OpusStreamContext *s,
-                                 const uint8_t *buf, int buf_size,
-                                 int nb_samples)
+static int opus_decode_subpacket(OpusStreamContext *s, const uint8_t *buf)
 {
     int output_samples = 0;
     int flush_needed   = 0;
@@ -484,6 +482,7 @@ static int opus_decode_packet(AVCodecContext *avctx, AVFrame *frame,
     int coded_samples   = 0;
     int decoded_samples = INT_MAX;
     int delayed_samples = 0;
+    int subpacket_size  = 0;
     int i, ret;
 
     /* calculate the number of delayed samples */
@@ -491,8 +490,9 @@ static int opus_decode_packet(AVCodecContext *avctx, AVFrame *frame,
         OpusStreamContext *s = &c->streams[i];
         s->out[0] =
         s->out[1] = NULL;
+        int fifo_samples = av_audio_fifo_size(s->sync_buffer);
         delayed_samples = FFMAX(delayed_samples,
-                                s->delayed_samples + av_audio_fifo_size(s->sync_buffer));
+                                s->delayed_samples + fifo_samples);
     }
 
     /* decode the header of the first sub-packet to find out the sample count */
@@ -504,6 +504,7 @@ static int opus_decode_packet(AVCodecContext *avctx, AVFrame *frame,
             return ret;
         }
         coded_samples += pkt->frame_count * pkt->frame_duration;
+        subpacket_size = pkt->packet_size;
         c->streams[0].silk_samplerate = get_silk_samplerate(pkt->config);
     }
 
@@ -575,18 +576,18 @@ static int opus_decode_packet(AVCodecContext *avctx, AVFrame *frame,
                 return AVERROR_INVALIDDATA;
             }
 
+            subpacket_size     = s->packet.packet_size;
             s->silk_samplerate = get_silk_samplerate(s->packet.config);
         }
 
-        ret = opus_decode_subpacket(&c->streams[i], buf, s->packet.data_size,
-                                    coded_samples);
+        ret = opus_decode_subpacket(&c->streams[i], buf);
         if (ret < 0)
             return ret;
         s->decoded_samples = ret;
         decoded_samples       = FFMIN(decoded_samples, ret);
 
-        buf      += s->packet.packet_size;
-        buf_size -= s->packet.packet_size;
+        buf       = FF_PTR_ADD(buf, subpacket_size);
+        buf_size -= subpacket_size;
     }
 
     /* buffer the extra samples */
@@ -639,10 +640,10 @@ static av_cold void opus_decode_flush(AVCodecContext *ctx)
         memset(&s->packet, 0, sizeof(s->packet));
         s->delayed_samples = 0;
 
-        av_audio_fifo_drain(s->celt_delay, av_audio_fifo_size(s->celt_delay));
+        av_audio_fifo_reset(s->celt_delay);
         swr_close(s->swr);
 
-        av_audio_fifo_drain(s->sync_buffer, av_audio_fifo_size(s->sync_buffer));
+        av_audio_fifo_reset(s->sync_buffer);
 
         ff_silk_flush(s->silk);
         ff_celt_flush(s->celt);

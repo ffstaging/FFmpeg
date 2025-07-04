@@ -52,12 +52,12 @@ static const AVOption flat_options[] = {
 
 DEFINE_FORMATTER_CLASS(flat);
 
-static av_cold int flat_init(AVTextFormatContext *wctx)
+static av_cold int flat_init(AVTextFormatContext *tctx)
 {
-    FlatContext *flat = wctx->priv;
+    FlatContext *flat = tctx->priv;
 
     if (strlen(flat->sep_str) != 1) {
-        av_log(wctx, AV_LOG_ERROR, "Item separator '%s' specified, but must contain a single character\n",
+        av_log(tctx, AV_LOG_ERROR, "Item separator '%s' specified, but must contain a single character\n",
                flat->sep_str);
         return AVERROR(EINVAL);
     }
@@ -99,12 +99,12 @@ static const char *flat_escape_value_str(AVBPrint *dst, const char *src)
     return dst->str;
 }
 
-static void flat_print_section_header(AVTextFormatContext *wctx, const void *data)
+static void flat_print_section_header(AVTextFormatContext *tctx, const void *data)
 {
-    FlatContext *flat = wctx->priv;
-    AVBPrint *buf = &wctx->section_pbuf[wctx->level];
-    const AVTextFormatSection *section = tf_get_section(wctx, wctx->level);
-    const AVTextFormatSection *parent_section = tf_get_parent_section(wctx, wctx->level);
+    FlatContext *flat = tctx->priv;
+    AVBPrint *buf = &tctx->section_pbuf[tctx->level];
+    const AVTextFormatSection *section = tf_get_section(tctx, tctx->level);
+    const AVTextFormatSection *parent_section = tf_get_parent_section(tctx, tctx->level);
 
     if (!section)
         return;
@@ -114,37 +114,37 @@ static void flat_print_section_header(AVTextFormatContext *wctx, const void *dat
     if (!parent_section)
         return;
 
-    av_bprintf(buf, "%s", wctx->section_pbuf[wctx->level - 1].str);
+    av_bprintf(buf, "%s", tctx->section_pbuf[tctx->level - 1].str);
 
     if (flat->hierarchical ||
         !(section->flags & (AV_TEXTFORMAT_SECTION_FLAG_IS_ARRAY | AV_TEXTFORMAT_SECTION_FLAG_IS_WRAPPER))) {
-        av_bprintf(buf, "%s%s", wctx->section[wctx->level]->name, flat->sep_str);
+        av_bprintf(buf, "%s%s", tctx->section[tctx->level]->name, flat->sep_str);
 
         if (parent_section->flags & AV_TEXTFORMAT_SECTION_FLAG_IS_ARRAY) {
             int n = parent_section->flags & AV_TEXTFORMAT_SECTION_FLAG_NUMBERING_BY_TYPE
-                ? wctx->nb_item_type[wctx->level - 1][section->id]
-                : wctx->nb_item[wctx->level - 1];
+                ? tctx->nb_item_type[tctx->level - 1][section->id]
+                : tctx->nb_item[tctx->level - 1];
 
             av_bprintf(buf, "%d%s", n, flat->sep_str);
         }
     }
 }
 
-static void flat_print_int(AVTextFormatContext *wctx, const char *key, int64_t value)
+static void flat_print_int(AVTextFormatContext *tctx, const char *key, int64_t value)
 {
-    writer_printf(wctx, "%s%s=%"PRId64"\n", wctx->section_pbuf[wctx->level].str, key, value);
+    writer_printf(tctx, "%s%s=%"PRId64"\n", tctx->section_pbuf[tctx->level].str, key, value);
 }
 
-static void flat_print_str(AVTextFormatContext *wctx, const char *key, const char *value)
+static void flat_print_str(AVTextFormatContext *tctx, const char *key, const char *value)
 {
-    FlatContext *flat = wctx->priv;
+    FlatContext *flat = tctx->priv;
     AVBPrint buf;
 
-    writer_put_str(wctx, wctx->section_pbuf[wctx->level].str);
+    writer_put_str(tctx, tctx->section_pbuf[tctx->level].str);
     av_bprint_init(&buf, 1, AV_BPRINT_SIZE_UNLIMITED);
-    writer_printf(wctx, "%s=", flat_escape_key_str(&buf, key, flat->sep));
+    writer_printf(tctx, "%s=", flat_escape_key_str(&buf, key, flat->sep));
     av_bprint_clear(&buf);
-    writer_printf(wctx, "\"%s\"\n", flat_escape_value_str(&buf, value));
+    writer_printf(tctx, "\"%s\"\n", flat_escape_value_str(&buf, value));
     av_bprint_finalize(&buf, NULL);
 }
 

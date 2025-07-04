@@ -33,7 +33,7 @@ typedef struct AVDiagramConfig {
 } AVDiagramConfig;
 
 
-void av_diagram_init(AVTextFormatContext *tfc, AVDiagramConfig *diagram_config);
+void av_diagram_init(AVTextFormatContext *tctx, AVDiagramConfig *diagram_config);
 
 void av_mermaid_set_html_template(AVTextFormatContext *tfc, const char *html_template);
 

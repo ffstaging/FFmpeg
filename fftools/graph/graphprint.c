@@ -161,7 +161,7 @@ static inline char *upcase_string(char *dst, size_t dst_size, const char *src)
 {
     unsigned i;
     for (i = 0; src[i] && i < dst_size - 1; i++)
-        dst[i]      = (char)av_toupper(src[i]);
+        dst[i]      = av_toupper(src[i]);
     dst[i] = 0;
     return dst;
 }
@@ -261,7 +261,7 @@ static void print_link(GraphPrintContext *gpc, AVFilterLink *link)
     case AVMEDIA_TYPE_VIDEO:
 
         if (hw_frames_ctx && hw_frames_ctx->data) {
-            AVHWFramesContext *      hwfctx      = (AVHWFramesContext *)hw_frames_ctx->data;
+            AVHWFramesContext *hwfctx = (AVHWFramesContext *)hw_frames_ctx->data;
             const AVPixFmtDescriptor *pix_desc_hw = av_pix_fmt_desc_get(hwfctx->format);
             const AVPixFmtDescriptor *pix_desc_sw = av_pix_fmt_desc_get(hwfctx->sw_format);
             if (pix_desc_hw && pix_desc_sw)
@@ -498,7 +498,7 @@ static void print_filtergraph_single(GraphPrintContext *gpc, FilterGraph *fg, AV
         print_int("input_index", ifilter->index);
 
         if (ifilter->linklabel)
-            print_str("link_label", (const char*)ifilter->linklabel);
+            print_str("link_label", ifilter->linklabel);
 
         if (ifilter->filter) {
             print_id("filter_id", ifilter->filter->name);
@@ -506,9 +506,9 @@ static void print_filtergraph_single(GraphPrintContext *gpc, FilterGraph *fg, AV
         }
 
         if (ifilter->linklabel && ifilter->filter)
-            av_dict_set(&input_map, ifilter->filter->name, (const char *)ifilter->linklabel, 0);
+            av_dict_set(&input_map, ifilter->filter->name, ifilter->linklabel, 0);
         else if (ifilter->input_name && ifilter->filter)
-            av_dict_set(&input_map, ifilter->filter->name, (const char *)ifilter->input_name, 0);
+            av_dict_set(&input_map, ifilter->filter->name, ifilter->input_name, 0);
 
         print_str("media_type", av_get_media_type_string(media_type));
 
@@ -529,7 +529,7 @@ static void print_filtergraph_single(GraphPrintContext *gpc, FilterGraph *fg, AV
         print_str("name", ofilter->output_name);
 
         if (fg->outputs[i]->linklabel)
-            print_str("link_label", (const char*)fg->outputs[i]->linklabel);
+            print_str("link_label", fg->outputs[i]->linklabel);
 
         if (ofilter->filter) {
             print_id("filter_id", ofilter->filter->name);
@@ -1069,7 +1069,7 @@ static int print_filtergraphs_priv(FilterGraph **graphs, int nb_graphs, InputFil
                 goto cleanup;
             }
 
-            avio_write(avio, (const unsigned char *)target_buf.str, FFMIN(target_buf.len, target_buf.size - 1));
+            avio_write(avio, target_buf.str, FFMIN(target_buf.len, target_buf.size - 1));
 
             if ((ret = avio_closep(&avio)) < 0)
                 av_log(NULL, AV_LOG_ERROR, "Error closing graph output file, loss of information possible: %s\n", av_err2str(ret));

@@ -86,56 +86,56 @@ static char *ini_escape_str(AVBPrint *dst, const char *src)
     return dst->str;
 }
 
-static void ini_print_section_header(AVTextFormatContext *wctx, const void *data)
+static void ini_print_section_header(AVTextFormatContext *tctx, const void *data)
 {
-    INIContext *ini = wctx->priv;
-    AVBPrint *buf = &wctx->section_pbuf[wctx->level];
-    const AVTextFormatSection *section = tf_get_section(wctx, wctx->level);
-    const AVTextFormatSection *parent_section = tf_get_parent_section(wctx, wctx->level);
+    INIContext *ini = tctx->priv;
+    AVBPrint *buf = &tctx->section_pbuf[tctx->level];
+    const AVTextFormatSection *section = tf_get_section(tctx, tctx->level);
+    const AVTextFormatSection *parent_section = tf_get_parent_section(tctx, tctx->level);
 
     if (!section)
         return;
 
     av_bprint_clear(buf);
     if (!parent_section) {
-        writer_put_str(wctx, "# ffprobe output\n\n");
+        writer_put_str(tctx, "# ffprobe output\n\n");
         return;
     }
 
-    if (wctx->nb_item[wctx->level - 1])
-        writer_w8(wctx, '\n');
+    if (tctx->nb_item[tctx->level - 1])
+        writer_w8(tctx, '\n');
 
-    av_bprintf(buf, "%s", wctx->section_pbuf[wctx->level - 1].str);
+    av_bprintf(buf, "%s", tctx->section_pbuf[tctx->level - 1].str);
     if (ini->hierarchical ||
         !(section->flags & (AV_TEXTFORMAT_SECTION_FLAG_IS_ARRAY | AV_TEXTFORMAT_SECTION_FLAG_IS_WRAPPER))) {
-        av_bprintf(buf, "%s%s", buf->str[0] ? "." : "", wctx->section[wctx->level]->name);
+        av_bprintf(buf, "%s%s", buf->str[0] ? "." : "", tctx->section[tctx->level]->name);
 
         if (parent_section->flags & AV_TEXTFORMAT_SECTION_FLAG_IS_ARRAY) {
             unsigned n = parent_section->flags & AV_TEXTFORMAT_SECTION_FLAG_NUMBERING_BY_TYPE
-                ? wctx->nb_item_type[wctx->level - 1][section->id]
-                : wctx->nb_item[wctx->level - 1];
+                ? tctx->nb_item_type[tctx->level - 1][section->id]
+                : tctx->nb_item[tctx->level - 1];
             av_bprintf(buf, ".%u", n);
         }
     }
 
     if (!(section->flags & (AV_TEXTFORMAT_SECTION_FLAG_IS_ARRAY | AV_TEXTFORMAT_SECTION_FLAG_IS_WRAPPER)))
-        writer_printf(wctx, "[%s]\n", buf->str);
+        writer_printf(tctx, "[%s]\n", buf->str);
 }
 
-static void ini_print_str(AVTextFormatContext *wctx, const char *key, const char *value)
+static void ini_print_str(AVTextFormatContext *tctx, const char *key, const char *value)
 {
     AVBPrint buf;
 
     av_bprint_init(&buf, 1, AV_BPRINT_SIZE_UNLIMITED);
-    writer_printf(wctx, "%s=", ini_escape_str(&buf, key));
+    writer_printf(tctx, "%s=", ini_escape_str(&buf, key));
     av_bprint_clear(&buf);
-    writer_printf(wctx, "%s\n", ini_escape_str(&buf, value));
+    writer_printf(tctx, "%s\n", ini_escape_str(&buf, value));
     av_bprint_finalize(&buf, NULL);
 }
 
-static void ini_print_int(AVTextFormatContext *wctx, const char *key, int64_t value)
+static void ini_print_int(AVTextFormatContext *tctx, const char *key, int64_t value)
 {
-    writer_printf(wctx, "%s=%"PRId64"\n", key, value);
+    writer_printf(tctx, "%s=%"PRId64"\n", key, value);
 }
 
 const AVTextFormatter avtextformatter_ini = {

@@ -576,7 +576,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
                 provider_oriented_code != 0x800)
                 break;
 
-            res = ff_dovi_rpu_parse(&dav1d->dovi, gb.buffer, gb.buffer_end - gb.buffer,
+            res = ff_dovi_rpu_parse(&dav1d->dovi, gb.buffer, bytestream2_get_bytes_left(&gb),
                                     c->err_recognition);
             if (res < 0) {
                 av_log(c, AV_LOG_WARNING, "Error parsing DOVI OBU.\n");

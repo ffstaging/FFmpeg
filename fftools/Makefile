@@ -5,6 +5,11 @@ AVPROGS-$(CONFIG_FFPROBE)  += ffprobe
 AVPROGS     := $(AVPROGS-yes:%=%$(PROGSSUF)$(EXESUF))
 PROGS       += $(AVPROGS)
 
+FFMPEG_SG_SCRIPT = $(SRC_PATH)/tools/ffmpeg-sg$(if $(filter .exe,$(EXESUF)),.cmd)
+FFMPEG_SG_TARGET = ffmpeg-sg$(EXESUF)
+FFMPEG_SG_ENABLED = $(and $(filter $(CONFIG_FFMPEG),yes),$(or $(filter $(target_os),win32),$(if $(target_os),,yes)))
+FFMPEG_SG_FILES = $(if $(FFMPEG_SG_ENABLED),$(FFMPEG_SG_TARGET))
+
 AVBASENAMES  = ffmpeg ffplay ffprobe
 ALLAVPROGS   = $(AVBASENAMES:%=%$(PROGSSUF)$(EXESUF))
 ALLAVPROGS_G = $(AVBASENAMES:%=%$(PROGSSUF)_g$(EXESUF))
@@ -69,7 +74,10 @@ endef
 
 $(foreach P,$(AVPROGS-yes),$(eval $(call DOFFTOOL,$(P))))
 
-all: $(AVPROGS)
+all: $(AVPROGS) $(FFMPEG_SG_FILES)
+
+$(FFMPEG_SG_TARGET): $(FFMPEG_SG_SCRIPT)
+	$(Q)$(CP) -p $(FFMPEG_SG_SCRIPT) $(FFMPEG_SG_TARGET)
 
 fftools/ffprobe.o fftools/cmdutils.o: libavutil/ffversion.h | fftools
 OUTDIRS += fftools
@@ -87,11 +95,13 @@ install-progs-$(CONFIG_SHARED): install-libs
 install-progs: install-progs-yes $(AVPROGS)
 	$(Q)mkdir -p "$(BINDIR)"
 	$(INSTALL) -c -m 755 $(AVPROGS) "$(BINDIR)"
+	$(if $(FFMPEG_SG_FILES),$(INSTALL) -c -m 755 $(FFMPEG_SG_FILES) "$(BINDIR)")
 
 uninstall: uninstall-progs
 
 uninstall-progs:
 	$(RM) $(addprefix "$(BINDIR)/", $(ALLAVPROGS))
+	$(if $(FFMPEG_SG_FILES),$(RM) "$(BINDIR)/$(FFMPEG_SG_FILES)")
 
 clean::
-	$(RM) $(ALLAVPROGS) $(ALLAVPROGS_G) $(CLEANSUFFIXES:%=fftools/%) $(CLEANSUFFIXES:%=fftools/graph/%) $(CLEANSUFFIXES:%=fftools/textformat/%)
+	$(RM) $(ALLAVPROGS) $(ALLAVPROGS_G) $(CLEANSUFFIXES:%=fftools/%) $(CLEANSUFFIXES:%=fftools/graph/%) $(CLEANSUFFIXES:%=fftools/textformat/%) $(FFMPEG_SG_FILES)

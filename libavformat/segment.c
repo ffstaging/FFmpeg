@@ -20,7 +20,7 @@
 
 /**
  * @file generic segmenter
- * M3U8 specification can be find here:
+ * M3U8 specification can be found here:
  * @url{http://tools.ietf.org/id/draft-pantos-http-live-streaming}
  */
 
@@ -122,6 +122,9 @@ typedef struct SegmentContext {
     int   break_non_keyframes;
     int   write_empty;
 
+    int segment_limit;       ///< max number of segments to create
+
+    int segment_write_temp; ///< write segments as temp files and rename on completion
     int use_rename;
     char *temp_list_filename;
 
@@ -175,7 +178,7 @@ static int segment_mux_init(AVFormatContext *s)
             return AVERROR(ENOMEM);
         opar = st->codecpar;
         if (!oc->oformat->codec_tag ||
-            av_codec_get_id (oc->oformat->codec_tag, ipar->codec_tag) == opar->codec_id ||
+            av_codec_get_id(oc->oformat->codec_tag, ipar->codec_tag) == opar->codec_id ||
             av_codec_get_tag(oc->oformat->codec_tag, ipar->codec_id) <= 0) {
             opar->codec_tag = ipar->codec_tag;
         } else {
@@ -231,6 +234,14 @@ static int set_segment_filename(AVFormatContext *s)
     snprintf(seg->cur_entry.filename, size, "%s%s",
              seg->entry_prefix ? seg->entry_prefix : "",
              av_basename(oc->url));
+
+    // Write segment as a temp file and rename on completion
+    if(seg->segment_write_temp) {
+        char *temp_name = av_asprintf("%s%s", buf, ".tmp");
+        if (!temp_name)
+            return AVERROR(ENOMEM);
+        ff_format_set_url(oc, temp_name);
+    }
 
     return 0;
 }
@@ -337,17 +348,17 @@ static void segment_list_print_entry(AVIOContext      *list_ioctx,
                     list_entry->end_time - list_entry->start_time, list_entry->filename);
         break;
     case LIST_TYPE_FFCONCAT:
-    {
-        char *buf;
-        if (av_escape(&buf, list_entry->filename, NULL, AV_ESCAPE_MODE_AUTO, AV_ESCAPE_FLAG_WHITESPACE) < 0) {
-            av_log(log_ctx, AV_LOG_WARNING,
-                   "Error writing list entry '%s' in list file\n", list_entry->filename);
-            return;
+        {
+            char *buf;
+            if (av_escape(&buf, list_entry->filename, NULL, AV_ESCAPE_MODE_AUTO, AV_ESCAPE_FLAG_WHITESPACE) < 0) {
+                av_log(log_ctx, AV_LOG_WARNING,
+                       "Error writing list entry '%s' in list file\n", list_entry->filename);
+                return;
+            }
+            avio_printf(list_ioctx, "file %s\n", buf);
+            av_free(buf);
+            break;
         }
-        avio_printf(list_ioctx, "file %s\n", buf);
-        av_free(buf);
-        break;
-    }
     default:
         av_assert0(!"Invalid list type");
     }
@@ -365,6 +376,9 @@ static int segment_end(AVFormatContext *s, int write_trailer, int is_last)
     int i;
     int err;
 
+    if (seg->segment_limit && seg->segment_count >= seg->segment_limit)
+        return 0;
+
     if (!oc || !oc->pb)
         return AVERROR(EINVAL);
 
@@ -381,7 +395,7 @@ static int segment_end(AVFormatContext *s, int write_trailer, int is_last)
             SegmentListEntry *entry = av_mallocz(sizeof(*entry));
             if (!entry) {
                 ret = AVERROR(ENOMEM);
-                goto end;
+                goto fail;
             }
 
             /* append new element */
@@ -402,7 +416,7 @@ static int segment_end(AVFormatContext *s, int write_trailer, int is_last)
             }
 
             if ((ret = segment_list_open(s)) < 0)
-                goto end;
+                goto fail;
             for (entry = seg->segment_list_entries; entry; entry = entry->next)
                 segment_list_print_entry(seg->list_pb, seg->list_type, entry, s);
             if (seg->list_type == LIST_TYPE_M3U8 && is_last)
@@ -452,14 +466,27 @@ static int segment_end(AVFormatContext *s, int write_trailer, int is_last)
                         av_log(s, AV_LOG_WARNING, "Could not increment stream %d timecode, error occurred during timecode creation.\n", i);
                         continue;
                     }
-                st_tc.start += (int)((seg->cur_entry.end_time - seg->cur_entry.start_time) * av_q2d(st_rate));    // increment timecode
-                av_dict_set(&s->streams[i]->metadata, "timecode", av_timecode_make_string(&st_tc, st_buf, 0), 0);
+                    st_tc.start += (int)((seg->cur_entry.end_time - seg->cur_entry.start_time) * av_q2d(st_rate));    // increment timecode
+                    av_dict_set(&s->streams[i]->metadata, "timecode", av_timecode_make_string(&st_tc, st_buf, 0), 0);
                 }
             }
         }
     }
 
-end:
+    ff_format_io_close(oc, &oc->pb);
+
+    // Now rename the .tmp file to its actual name.
+    if (seg->segment_write_temp) {
+        char *final_filename = av_strndup(oc->url, strlen(oc->url) - 4);
+        if (!final_filename)
+            return AVERROR(ENOMEM);
+        ret = ff_rename(oc->url, final_filename, s);
+        av_free(final_filename);
+    }
+
+    return ret;
+
+fail:
     ff_format_io_close(oc, &oc->pb);
 
     return ret;
@@ -733,8 +760,8 @@ static int seg_init(AVFormatContext *s)
 
     if (seg->list) {
         if (seg->list_type == LIST_TYPE_UNDEFINED) {
-            if      (av_match_ext(seg->list, "csv" )) seg->list_type = LIST_TYPE_CSV;
-            else if (av_match_ext(seg->list, "ext" )) seg->list_type = LIST_TYPE_EXT;
+            if      (av_match_ext(seg->list, "csv")) seg->list_type = LIST_TYPE_CSV;
+            else if (av_match_ext(seg->list, "ext")) seg->list_type = LIST_TYPE_EXT;
             else if (av_match_ext(seg->list, "m3u8")) seg->list_type = LIST_TYPE_M3U8;
             else if (av_match_ext(seg->list, "ffcat,ffconcat")) seg->list_type = LIST_TYPE_FFCONCAT;
             else                                      seg->list_type = LIST_TYPE_FLAT;
@@ -867,6 +894,9 @@ static int seg_write_packet(AVFormatContext *s, AVPacket *pkt)
     int64_t usecs;
     int64_t wrapped_val;
 
+    if (seg->segment_limit && seg->segment_count >= seg->segment_limit)
+        return 0;
+
     if (!seg->avf || !seg->avf->pb)
         return AVERROR(EINVAL);
 
@@ -885,11 +915,9 @@ static int seg_write_packet(AVFormatContext *s, AVPacket *pkt)
 
 calc_times:
     if (seg->times) {
-        end_pts = seg->segment_count < seg->nb_times ?
-            seg->times[seg->segment_count] : INT64_MAX;
+        end_pts = seg->segment_count < seg->nb_times ? seg->times[seg->segment_count] : INT64_MAX;
     } else if (seg->frames) {
-        start_frame = seg->segment_count < seg->nb_frames ?
-            seg->frames[seg->segment_count] : INT_MAX;
+        start_frame = seg->segment_count < seg->nb_frames ? seg->frames[seg->segment_count] : INT_MAX;
     } else {
         if (seg->use_clocktime) {
             int64_t avgt = av_gettime();
@@ -930,16 +958,19 @@ calc_times:
         (pkt->flags & AV_PKT_FLAG_KEY || seg->break_non_keyframes) &&
         (seg->segment_frame_count > 0 || seg->write_empty) &&
         (seg->cut_pending || seg->frame_count >= start_frame ||
-         (pkt->pts != AV_NOPTS_VALUE &&
-          pkt_pts_avtb - seg->cur_entry.start_pts >= seg->min_seg_duration &&
-          av_compare_ts(pkt->pts, st->time_base,
-                        end_pts - seg->time_delta, AV_TIME_BASE_Q) >= 0))) {
+            (pkt->pts != AV_NOPTS_VALUE &&
+                pkt_pts_avtb - seg->cur_entry.start_pts >= seg->min_seg_duration &&
+                av_compare_ts(pkt->pts, st->time_base,
+                              end_pts - seg->time_delta, AV_TIME_BASE_Q) >= 0))) {
         /* sanitize end time in case last packet didn't have a defined duration */
         if (seg->cur_entry.last_duration == 0)
             seg->cur_entry.end_time = (double)pkt->pts * av_q2d(st->time_base);
 
         if ((ret = segment_end(s, seg->individual_header_trailer, 0)) < 0)
             goto fail;
+
+        if (seg->segment_limit && seg->segment_count >= seg->segment_limit)
+            return 0;
 
         if ((ret = segment_start(s, seg->individual_header_trailer)) < 0)
             goto fail;
@@ -1033,8 +1064,8 @@ static int seg_check_bitstream(AVFormatContext *s, AVStream *st,
         if (ret == 1) {
             FFStream *const  sti = ffstream(st);
             FFStream *const osti = ffstream(ost);
-             sti->bsfc = osti->bsfc;
-            osti->bsfc = NULL;
+            sti->bsfc            = osti->bsfc;
+            osti->bsfc           = NULL;
         }
         return ret;
     }
@@ -1067,8 +1098,8 @@ static const AVOption options[] = {
     { "segment_atclocktime",      "set segment to be cut at clocktime",  OFFSET(use_clocktime), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, E},
     { "segment_clocktime_offset", "set segment clocktime offset",        OFFSET(clocktime_offset), AV_OPT_TYPE_DURATION, {.i64 = 0}, 0, 86400000000LL, E},
     { "segment_clocktime_wrap_duration", "set segment clocktime wrapping duration", OFFSET(clocktime_wrap_duration), AV_OPT_TYPE_DURATION, {.i64 = INT64_MAX}, 0, INT64_MAX, E},
-    { "segment_time",      "set segment duration",                       OFFSET(time),AV_OPT_TYPE_DURATION, {.i64 = 2000000}, INT64_MIN, INT64_MAX,       E },
-    { "segment_time_delta","set approximation value used for the segment times", OFFSET(time_delta), AV_OPT_TYPE_DURATION, {.i64 = 0}, 0, INT64_MAX, E },
+    { "segment_time",      "set segment duration",                       OFFSET(time),AV_OPT_TYPE_DURATION, {.i64 = 2000000}, 0, INT64_MAX,       E },
+    { "segment_time_delta","set approximation value used for the segment times", OFFSET(time_delta), AV_OPT_TYPE_DURATION, {.i64 = 0}, INT64_MIN, INT64_MAX, E },
     { "min_seg_duration",  "set minimum segment duration",               OFFSET(min_seg_duration), AV_OPT_TYPE_DURATION, {.i64 = 0}, 0, INT64_MAX, E },
     { "segment_times",     "set segment split time points",              OFFSET(times_str),AV_OPT_TYPE_STRING,{.str = NULL},  0, 0,       E },
     { "segment_frames",    "set segment split frame numbers",            OFFSET(frames_str),AV_OPT_TYPE_STRING,{.str = NULL},  0, 0,       E },
@@ -1085,6 +1116,8 @@ static const AVOption options[] = {
     { "reset_timestamps", "reset timestamps at the beginning of each segment", OFFSET(reset_timestamps), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, E },
     { "initial_offset", "set initial timestamp offset", OFFSET(initial_offset), AV_OPT_TYPE_DURATION, {.i64 = 0}, -INT64_MAX, INT64_MAX, E },
     { "write_empty_segments", "allow writing empty 'filler' segments", OFFSET(write_empty), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, E },
+    { "segment_write_temp", "write segments as temp files (.tmp) and rename on completion", OFFSET(segment_write_temp), AV_OPT_TYPE_BOOL,   {.i64 = 0}, 0, 1, E }, 
+    { "segment_limit", "stop output once the specified number of segments has been written", OFFSET(segment_limit), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, E },
     { NULL },
 };
 

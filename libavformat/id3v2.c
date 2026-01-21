@@ -334,39 +334,55 @@ static void read_ttag(AVFormatContext *s, AVIOContext *pb, int taglen,
                       AVDictionary **metadata, const char *key)
 {
     uint8_t *dst;
-    int encoding, dict_flags = AV_DICT_DONT_OVERWRITE | AV_DICT_DONT_STRDUP_VAL;
+    int encoding, nb_values = 0;
     unsigned genre;
+    AVDictionaryEntry *tag = NULL;
 
     if (taglen < 1)
+        return;
+
+    tag = av_dict_get(*metadata, key, NULL, 0);
+    if (tag)
         return;
 
     encoding = avio_r8(pb);
     taglen--; /* account for encoding type byte */
 
-    if (decode_str(s, pb, encoding, &dst, &taglen) < 0) {
-        av_log(s, AV_LOG_ERROR, "Error reading frame %s, skipped\n", key);
-        return;
-    }
+    /* Read all null-terminated values */
+    while (taglen > 0) {
+        int n = 0, dict_flags = AV_DICT_APPEND | AV_DICT_DONT_STRDUP_VAL;
 
-    if (!(strcmp(key, "TCON") && strcmp(key, "TCO"))                         &&
-        (sscanf(dst, "(%d)", &genre) == 1 || sscanf(dst, "%d", &genre) == 1) &&
-        genre <= ID3v1_GENRE_MAX) {
-        av_freep(&dst);
-        dst = av_strdup(ff_id3v1_genre_str[genre]);
-    } else if (!(strcmp(key, "TXXX") && strcmp(key, "TXX"))) {
-        /* dst now contains the key, need to get value */
-        key = dst;
         if (decode_str(s, pb, encoding, &dst, &taglen) < 0) {
             av_log(s, AV_LOG_ERROR, "Error reading frame %s, skipped\n", key);
-            av_freep(&key);
             return;
         }
-        dict_flags |= AV_DICT_DONT_STRDUP_KEY;
-    } else if (!*dst)
-        av_freep(&dst);
 
-    if (dst)
-        av_dict_set(metadata, key, dst, dict_flags);
+        if (!(strcmp(key, "TCON") && strcmp(key, "TCO")) &&
+            (sscanf(dst, "(%d)", &genre) == 1 || (sscanf(dst, "%d%n", &genre, &n) == 1 && n == strlen(dst))) &&
+            genre <= ID3v1_GENRE_MAX) {
+            av_freep(&dst);
+            dst = av_strdup(ff_id3v1_genre_str[genre]);
+        } else if (!(strcmp(key, "TXXX") && strcmp(key, "TXX"))) {
+            /* dst now contains the key, need to get value */
+            key = dst;
+            if (decode_str(s, pb, encoding, &dst, &taglen) < 0) {
+                av_log(s, AV_LOG_ERROR, "Error reading frame %s, skipped\n", key);
+                av_freep(&key);
+                return;
+            }
+        } else if (!*dst) {
+            av_freep(&dst);
+            return;
+        }
+
+        if (dst) {
+            if (nb_values > 0)
+                av_dict_set(metadata, key, ";", dict_flags & ~AV_DICT_DONT_STRDUP_VAL);
+
+            av_dict_set(metadata, key, dst, dict_flags);
+            nb_values++;
+        }
+    }
 }
 
 static void read_uslt(AVFormatContext *s, AVIOContext *pb, int taglen,
@@ -379,7 +395,7 @@ static void read_uslt(AVFormatContext *s, AVIOContext *pb, int taglen,
     int encoding;
     int ok = 0;
 
-    if (taglen < 4)
+    if (taglen < 1)
         goto error;
 
     encoding = avio_r8(pb);
@@ -390,10 +406,10 @@ static void read_uslt(AVFormatContext *s, AVIOContext *pb, int taglen,
     lang[3] = '\0';
     taglen -= 3;
 
-    if (decode_str(s, pb, encoding, &descriptor, &taglen) < 0 || taglen < 0)
+    if (decode_str(s, pb, encoding, &descriptor, &taglen) < 0)
         goto error;
 
-    if (decode_str(s, pb, encoding, &text, &taglen) < 0 || taglen < 0)
+    if (decode_str(s, pb, encoding, &text, &taglen) < 0)
         goto error;
 
     // FFmpeg does not support hierarchical metadata, so concatenate the keys.
@@ -1010,7 +1026,8 @@ static void id3v2_parse(AVIOContext *pb, AVDictionary **metadata,
                         t++;
                 }
 
-                ffio_init_read_context(&pb_local, buffer, b - buffer);
+                ffio_init_context(&pb_local, buffer, b - buffer, 0, NULL, NULL, NULL,
+                                  NULL);
                 tlen = b - buffer;
                 pbx  = &pb_local.pub; // read from sync buffer
             }
@@ -1046,7 +1063,7 @@ static void id3v2_parse(AVIOContext *pb, AVDictionary **metadata,
                         av_log(s, AV_LOG_ERROR, "Failed to uncompress tag: %d\n", err);
                         goto seek;
                     }
-                    ffio_init_read_context(&pb_local, uncompressed_buffer, dlen);
+                    ffio_init_context(&pb_local, uncompressed_buffer, dlen, 0, NULL, NULL, NULL, NULL);
                     tlen = dlen;
                     pbx = &pb_local.pub; // read from sync buffer
                 }

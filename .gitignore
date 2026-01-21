@@ -35,6 +35,7 @@
 /.config
 /.version
 /ffmpeg
+/ffmpeg-sg
 /ffplay
 /ffprobe
 /config.asm

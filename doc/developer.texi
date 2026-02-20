@@ -424,7 +424,7 @@ paste it from a random place, use an existing file as template.
 @subheading You must not commit code which breaks FFmpeg!
 This means unfinished code which is enabled and breaks compilation,
 or compiles but does not work/breaks the regression tests. Code which
-is unfinished but disabled may be permitted under-circumstances, like
+is unfinished but disabled may be permitted under circumstances, like
 missing samples or an implementation with a small subset of features.
 Always check the mailing list for any reviewers with issues and test
 FATE before you push.

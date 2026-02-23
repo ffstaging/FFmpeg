@@ -651,120 +651,8 @@ Removing previously deprecated APIs.
 Performing ABI- but not API-breaking changes, like reordering struct contents.
 @end itemize
 
-@section Documentation/Other
-@subheading Subscribe to the ffmpeg-devel mailing list.
-It is important to be subscribed to the
-@uref{https://lists.ffmpeg.org/mailman/listinfo/ffmpeg-devel, ffmpeg-devel}
-mailing list. Almost any non-trivial patch is to be sent there for review.
-Other developers may have comments about your contribution. We expect you see
-those comments, and to improve it if requested. (N.B. Experienced committers
-have other channels, and may sometimes skip review for trivial fixes.) Also,
-discussion here about bug fixes and FFmpeg improvements by other developers may
-be helpful information for you. Finally, by being a list subscriber, your
-contribution will be posted immediately to the list, without the moderation
-hold which messages from non-subscribers experience.
 
-However, it is more important to the project that we receive your patch than
-that you be subscribed to the ffmpeg-devel list. If you have a patch, and don't
-want to subscribe and discuss the patch, then please do send it to the list
-anyway.
-
-@subheading Subscribe to the ffmpeg-cvslog mailing list.
-Diffs of all commits are sent to the
-@uref{https://lists.ffmpeg.org/mailman/listinfo/ffmpeg-cvslog, ffmpeg-cvslog}
-mailing list. Some developers read this list to review all code base changes
-from all sources. Subscribing to this list is not mandatory.
-
-@subheading Keep the documentation up to date.
-Update the documentation if you change behavior or add features. If you are
-unsure how best to do this, send a patch to ffmpeg-devel, the documentation
-maintainer(s) will review and commit your stuff.
-
-@subheading Important discussions should be accessible to all.
-Try to keep important discussions and requests (also) on the public
-developer mailing list, so that all developers can benefit from them.
-
-@subheading Check your entries in MAINTAINERS.
-Make sure that no parts of the codebase that you maintain are missing from the
-@file{MAINTAINERS} file. If something that you want to maintain is missing add it with
-your name after it.
-If at some point you no longer want to maintain some code, then please help in
-finding a new maintainer and also don't forget to update the @file{MAINTAINERS} file.
-
-We think our rules are not too hard. If you have comments, contact us.
-
-@anchor{Submitting patches}
-@chapter Submitting patches
-
-First, read the @ref{Coding Rules} above if you did not yet, in particular
-the rules regarding patch submission.
-
-When you submit your patch, please use @code{git format-patch} or
-@code{git send-email}. We cannot read other diffs :-).
-
-Also please do not submit a patch which contains several unrelated changes.
-Split it into separate, self-contained pieces. This does not mean splitting
-file by file. Instead, make the patch as small as possible while still
-keeping it as a logical unit that contains an individual change, even
-if it spans multiple files. This makes reviewing your patches much easier
-for us and greatly increases your chances of getting your patch applied.
-
-Use the patcheck tool of FFmpeg to check your patch.
-The tool is located in the tools directory.
-
-Run the @ref{Regression tests} before submitting a patch in order to verify
-it does not cause unexpected problems.
-
-It also helps quite a bit if you tell us what the patch does (for example
-'replaces lrint by lrintf'), and why (for example '*BSD isn't C99 compliant
-and has no lrint()')
-
-Also please if you send several patches, send each patch as a separate mail,
-do not attach several unrelated patches to the same mail.
-
-Patches should be posted to the
-@uref{https://lists.ffmpeg.org/mailman/listinfo/ffmpeg-devel, ffmpeg-devel}
-mailing list. Use @code{git send-email} when possible since it will properly
-send patches without requiring extra care. If you cannot, then send patches
-as base64-encoded attachments, so your patch is not trashed during
-transmission. Also ensure the correct mime type is used
-(text/x-diff or text/x-patch or at least text/plain) and that only one
-patch is inline or attached per mail.
-You can check @url{https://patchwork.ffmpeg.org}, if your patch does not show up, its mime type
-likely was wrong.
-
-@subheading How to setup git send-email?
-
-Please see @url{https://git-send-email.io/}.
-For gmail additionally see @url{https://shallowsky.com/blog/tech/email/gmail-app-passwds.html}.
-
-@subheading Sending patches from email clients
-Using @code{git send-email} might not be desirable for everyone. The
-following trick allows to send patches via email clients in a safe
-way. It has been tested with Outlook and Thunderbird (with X-Unsent
-extension) and might work with other applications.
-
-Create your patch like this:
-
-@verbatim
-git format-patch -s -o "outputfolder" --add-header "X-Unsent: 1" --suffix .eml --to ffmpeg-devel@ffmpeg.org -1 1a2b3c4d
-@end verbatim
-
-Now you'll just need to open the eml file with the email application
-and execute 'Send'.
-
-@subheading Reviews
-Your patch will be reviewed on the mailing list. You will likely be asked
-to make some changes and are expected to send in an improved version that
-incorporates the requests from the review. This process may go through
-several iterations. Once your patch is deemed good enough, some developer
-will pick it up and commit it to the official FFmpeg tree.
-
-Give us a few days to react. But if some time passes without reaction,
-send a reminder by email. Your patch should eventually be dealt with.
-
-
-@chapter New codecs or formats checklist
+@section New codecs or formats checklist
 
 @enumerate
 @item
@@ -816,7 +704,69 @@ Did you make sure it compiles standalone, i.e. with
 @end enumerate
 
 
-@chapter Patch submission checklist
+@section Documentation/Other
+@subheading Subscribe to the ffmpeg-devel mailing list.
+It is important to be subscribed to the
+@uref{https://lists.ffmpeg.org/mailman/listinfo/ffmpeg-devel, ffmpeg-devel}
+mailing list. Almost any non-trivial patch is to be sent there for review.
+Other developers may have comments about your contribution. We expect you see
+those comments, and to improve it if requested. (N.B. Experienced committers
+have other channels, and may sometimes skip review for trivial fixes.) Also,
+discussion here about bug fixes and FFmpeg improvements by other developers may
+be helpful information for you. Finally, by being a list subscriber, your
+contribution will be posted immediately to the list, without the moderation
+hold which messages from non-subscribers experience.
+
+However, it is more important to the project that we receive your patch than
+that you be subscribed to the ffmpeg-devel list. If you have a patch, and don't
+want to subscribe and discuss the patch, then please do send it to the list
+anyway.
+
+@subheading Subscribe to the ffmpeg-cvslog mailing list.
+Diffs of all commits are sent to the
+@uref{https://lists.ffmpeg.org/mailman/listinfo/ffmpeg-cvslog, ffmpeg-cvslog}
+mailing list. Some developers read this list to review all code base changes
+from all sources. Subscribing to this list is not mandatory.
+
+@subheading Keep the documentation up to date.
+Update the documentation if you change behavior or add features. If you are
+unsure how best to do this, send a patch to ffmpeg-devel, the documentation
+maintainer(s) will review and commit your stuff.
+
+@subheading Important discussions should be accessible to all.
+Try to keep important discussions and requests (also) on the public
+developer mailing list, so that all developers can benefit from them.
+
+@subheading Check your entries in MAINTAINERS.
+Make sure that no parts of the codebase that you maintain are missing from the
+@file{MAINTAINERS} file. If something that you want to maintain is missing add it with
+your name after it.
+If at some point you no longer want to maintain some code, then please help in
+finding a new maintainer and also don't forget to update the @file{MAINTAINERS} file.
+
+We think our rules are not too hard. If you have comments, contact us.
+
+@anchor{Submitting patches}
+@chapter Submitting patches
+
+First, read the @ref{Coding Rules} above if you did not yet, in particular
+the rules regarding patch submission.
+
+Please do not submit a patch which contains several unrelated changes.
+Split it into separate, self-contained pieces. This does not mean splitting
+file by file. Instead, make the patch as small as possible while still
+keeping it as a logical unit that contains an individual change, even
+if it spans multiple files. This makes reviewing your patches much easier
+for us and greatly increases your chances of getting your patch applied.
+
+Use the patcheck tool of FFmpeg to check your patch.
+The tool is located in the tools directory.
+
+Run the @ref{Regression tests} before submitting a patch in order to verify
+it does not cause unexpected problems.
+
+
+@section Patch submission checklist
 
 @enumerate
 @item
@@ -927,10 +877,61 @@ Test your code with valgrind and or Address Sanitizer to ensure it's free
 of leaks, out of array accesses, etc.
 @end enumerate
 
+
+@section Submission procedures
+
+Patches should be posted to the
+@uref{https://lists.ffmpeg.org/mailman/listinfo/ffmpeg-devel, ffmpeg-devel}
+mailing list. 
+
+There are several ways how this can be accomplished:
+
+@subsection Using @code{git send-email}: Git sends e-mail directly via SMTP
+
+@code{git send-email} will properly format and send
+send patches without requiring extra care if the required setup is feasible.
+
+Please see @url{https://git-send-email.io/}.
+
+For gmail additionally see @url{https://shallowsky.com/blog/tech/email/gmail-app-passwds.html}.
+
+
+@subsection With @code{git format-patch}: Sending patches from email clients
+
+You can create patch files via @code{git format-patch} and send them as inline
+text or as base64-encoded attachments, so your patch is not trashed during
+transmission. Also ensure the correct mime type is used
+(text/x-diff or text/x-patch or at least text/plain).
+
+If you send several patches, send each patch as a separate mail,
+do not attach several unrelated patches to the same mail.
+
+You can check @url{https://patchwork.ffmpeg.org}, if your patch does not show up, its mime type
+likely was wrong.
+
+
+The following trick allows to send patches via email clients in a safe
+way. It has been tested with Outlook and Thunderbird (with X-Unsent
+extension) and might work with other applications.
+
+Create your patch like this:
+
+@verbatim
+git format-patch -s -o "outputfolder" --add-header "X-Unsent: 1" --suffix .eml --to ffmpeg-devel@ffmpeg.org -1 1a2b3c4d
+@end verbatim
+
+Now you'll just need to open the eml file with the email application
+and execute 'Send'.
+
+
 @chapter Patch review process
 
-All patches posted to ffmpeg-devel will be reviewed, unless they contain a
-clear note that the patch is not for the git master branch.
+Your patch will be reviewed on the mailing list. You will likely be asked
+to make some changes and are expected to send in an improved version that
+incorporates the requests from the review. This process may go through
+several iterations. Once your patch is deemed good enough, some developer
+will pick it up and commit it to the official FFmpeg tree.
+
 Reviews and comments will be posted as replies to the patch on the
 mailing list. The patch submitter then has to take care of every comment,
 that can be by resubmitting a changed patch or by discussion. Resubmitted
@@ -939,6 +940,9 @@ a patch passes review with no comments then it is approved, that can for
 simple and small patches happen immediately while large patches will generally
 have to be changed and reviewed many times before they are approved.
 After a patch is approved it will be committed to the repository.
+
+Give us a few days to react. But if some time passes without reaction,
+send a reminder by email. Your patch should eventually be dealt with.
 
 We will review all submitted patches, but sometimes we are quite busy so
 especially for large patches this can take several weeks.

@@ -1,0 +1,81 @@
+---
+BasedOnStyle:    GNU
+
+# Alignment & indentation rules
+AlignAfterOpenBracket:               Align
+AlignConsecutiveAssignments:         Consecutive
+AlignConsecutiveDeclarations:        AcrossEmptyLinesAndComments
+AlignArrayOfStructures:              Left
+AlignOperands:                       false
+AlignTrailingComments:               Always
+AlignEscapedNewlines:                LeftWithLastLine
+IndentWidth:                         4
+ContinuationIndentWidth:             4
+UseTab:                              Never
+TabWidth:                            4
+IndentPPDirectives:                  None
+IndentCaseBlocks:                    true
+IndentCaseLabels:                    false
+IndentGotoLabels:                    true
+PointerAlignment:                    Right
+
+AlignConsecutiveShortCaseStatements:
+  Enabled: true
+  AcrossEmptyLines: true
+  AcrossComments: true
+  AlignCaseColons: false
+  
+# Bracing style                      
+BreakBeforeBraces:                   Custom
+BraceWrapping:                       
+  AfterCaseLabel:                    true
+  AfterControlStatement:             Never
+  AfterEnum:                         true
+  AfterFunction:                     true
+  AfterClass:                        false
+  AfterStruct:                       false
+  AfterUnion:                        false
+  AfterExternBlock:                  false
+  BeforeElse:                        false
+  SplitEmptyFunction:                true
+  SplitEmptyRecord:                  true
+BreakAfterReturnType:                None
+
+# Keep lines from becoming too long (adjust to your preference)
+ColumnLimit:                      0
+
+# Misc formatting
+AlwaysBreakAfterReturnType:       None
+BinPackArguments:                 false
+BinPackParameters:                false
+# BinPackLongBracedList:            false
+BreakBeforeTernaryOperators:      true
+InsertNewlineAtEOF:               true
+MaxEmptyLinesToKeep:              2
+AlwaysBreakAfterDefinitionReturnType: None
+
+# Include style
+SortIncludes:                     Never
+IncludeBlocks:                    Preserve
+IncludeCategories:
+  - Regex: '^<.*'
+    Priority: 1
+  - Regex: '^".*'
+    Priority: 2
+  - Regex: '.*'
+    Priority: 3
+
+# Spacing
+SpaceAfterCStyleCast:            false
+SpaceAfterLogicalNot:            false
+SpaceBeforeAssignmentOperators:  true
+SpaceBeforeParens:               ControlStatements
+SpaceBeforeSquareBrackets:       false
+SpaceInEmptyParentheses:         false
+SpacesBeforeTrailingComments:    1
+SpacesInAngles:                  false
+SpacesInConditionalStatement:    false
+SpacesInCStyleCastParentheses:   false
+SpacesInParentheses:             false
+SpacesInSquareBrackets:          false
+...
